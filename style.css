@@ -1,0 +1,291 @@
+/* Lasu Animation Studio — fixed artwork and mobile-first interface. */
+
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #39484a;
+  background: #f2f0e9;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-color: #f2f0e9;
+  background-image: url("./lasu_animation_BG.png");
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: contain;
+  pointer-events: none;
+}
+
+button, input { font: inherit; }
+
+button, .primary-button {
+  cursor: pointer;
+  border: 1px solid #9caeaa;
+  border-radius: 999px;
+  padding: 0.75rem 1.15rem;
+  background: #e8eeeb;
+  color: #334b4b;
+  font-weight: 600;
+}
+
+button:hover, .primary-button:hover {
+  background: #dce8e2;
+}
+
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 3px solid #648b91;
+  outline-offset: 3px;
+}
+
+.site-header {
+  text-align: center;
+  padding: 2.4rem 1rem 0;
+}
+
+.studio-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.site-header h1 {
+  margin: 0.55rem 0 0;
+  font-family: Georgia, serif;
+  font-size: clamp(2.7rem, 11vw, 4rem);
+  font-weight: normal;
+}
+
+.site-header p {
+  margin: 0.1rem 0;
+  letter-spacing: 0.16em;
+  font-size: 0.85rem;
+}
+
+.welcome {
+  min-height: 70svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.welcome p {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+.primary-button {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.workspace {
+  width: min(100% - 1.5rem, 560px);
+  margin: 0 auto;
+  padding-bottom: 3rem;
+}
+
+.steps {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 5;
+  display: flex;
+  justify-content: space-around;
+  gap: 0.4rem;
+  padding: 0.65rem;
+  border: 1px solid #d8dfdb;
+  border-radius: 1.25rem;
+  background: rgba(248, 248, 243, 0.94);
+  backdrop-filter: blur(10px);
+}
+
+.steps a {
+  color: #4b6261;
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+.panel {
+  margin: 1.2rem 0;
+  padding: 1.3rem;
+  border: 1px solid rgba(177, 190, 182, 0.65);
+  border-radius: 1.4rem;
+  background: rgba(249, 249, 245, 0.90);
+  backdrop-filter: blur(9px);
+  box-shadow: 0 8px 30px rgba(56, 74, 67, 0.06);
+  scroll-margin-top: 4.5rem;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #6b8782;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-family: Georgia, serif;
+  font-size: 1.55rem;
+  font-weight: normal;
+  line-height: 1.25;
+}
+
+h3 {
+  margin-bottom: 0.35rem;
+  font-family: Georgia, serif;
+}
+
+.panel p { line-height: 1.55; }
+
+.agent-card {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #d9e1db;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.agent-card p { font-size: 0.9rem; }
+
+.upload-zone {
+  display: block;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  border: 2px dashed #a8bdb5;
+  border-radius: 1rem;
+  cursor: pointer;
+}
+
+.upload-zone span {
+  display: block;
+  font-weight: 600;
+}
+
+.upload-zone small {
+  display: block;
+  margin-top: 0.4rem;
+  color: #70827e;
+}
+
+.upload-zone input {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  margin: 1rem auto 0;
+  font-size: 0.8rem;
+}
+
+#sheet-list {
+  margin: 1rem 0;
+  font-size: 0.85rem;
+}
+
+.frame-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 1rem 0;
+}
+
+.frame-grid button {
+  position: relative;
+  padding: 0.2rem;
+  border-radius: 0.5rem;
+  background: white;
+}
+
+.frame-grid button.excluded {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+
+.frame-grid canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.timing-control {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.2rem;
+}
+
+#duration { width: 100%; }
+
+.preview-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+#frame-counter { font-size: 0.8rem; }
+
+#preview {
+  display: block;
+  width: min(100%, 280px);
+  height: auto;
+  margin: 0 auto;
+  border: 1px solid #d5dfda;
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+#cycles {
+  display: block;
+  width: 5rem;
+  margin: 0.5rem 0 1rem;
+  padding: 0.5rem;
+}
+
+.export-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+#status {
+  min-height: 1.5rem;
+  font-size: 0.85rem;
+}
+
+footer {
+  padding: 2rem 1rem 3rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #667b75;
+}
+
+@media (min-width: 700px) {
+  .site-header { padding-top: 3rem; }
+
+  .welcome { min-height: 75vh; }
+
+  .frame-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}

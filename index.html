@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2f0e9">
+  <meta name="description" content="Design, preview and export 16-frame sprite animations.">
+  <title>Lasu 🦩 Animation Studio</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="background" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <span class="studio-label">Mushroom House 🍄 Studio</span>
+    <h1>Lasu <span aria-hidden="true">🦩</span></h1>
+    <p>Animation Studio</p>
+  </header>
+
+  <main>
+    <section class="welcome" id="welcome">
+      <p>Little movements, one frame at a time.</p>
+      <a class="primary-button" href="#workspace">Start Animating</a>
+    </section>
+
+    <div class="workspace" id="workspace">
+      <nav class="steps" aria-label="Animation workflow">
+        <a href="#create">01 · Create</a>
+        <a href="#animate">02 · Animate</a>
+        <a href="#export">03 · Export</a>
+      </nav>
+
+      <section class="panel" id="create">
+        <p class="eyebrow">01 / Create</p>
+        <h2>Imagine a little movement</h2>
+        <p>Use these two task-agent prompts with ChatGPT or Gemini.</p>
+
+        <article class="agent-card">
+          <h3>Tuki 🦜</h3>
+          <p>Design the story and movement of a seamless 16-frame animation.</p>
+          <button type="button" data-copy="tuki">Copy Tuki's prompt</button>
+        </article>
+
+        <article class="agent-card">
+          <h3>Lasu 🦩</h3>
+          <p>Turn the animation instructions into a 4 × 4 sprite sheet.</p>
+          <button type="button" data-copy="lasu">Copy Lasu's prompt</button>
+        </article>
+      </section>
+
+      <section class="panel" id="animate">
+        <p class="eyebrow">02 / Animate</p>
+        <h2>Bring your frames to life</h2>
+
+        <label class="upload-zone" for="sheets">
+          <span>Choose 1–5 sprite sheets</span>
+          <small>PNG or JPEG · 4 × 4 grid · 16 frames per sheet</small>
+          <input id="sheets" type="file" accept="image/png,image/jpeg" multiple>
+        </label>
+
+        <div id="sheet-list" aria-live="polite"></div>
+        <div id="frame-grid" class="frame-grid"></div>
+
+        <label class="timing-control" for="duration">
+          Frame duration
+          <output id="duration-value" for="duration">150 ms</output>
+        </label>
+        <input id="duration" type="range" min="50" max="2000" step="25" value="150">
+
+        <div class="preview-controls">
+          <button type="button" id="play-pause">Pause</button>
+          <span id="frame-counter">No frames loaded</span>
+        </div>
+        <canvas id="preview" width="256" height="256"
+                aria-label="Animation preview"></canvas>
+      </section>
+
+      <section class="panel" id="export">
+        <p class="eyebrow">03 / Export</p>
+        <h2>Take your animation home</h2>
+
+        <label for="cycles">GIF cycles</label>
+        <input id="cycles" type="number" min="1" max="10" value="2">
+
+        <div class="export-buttons">
+          <button type="button" data-export="gif">Download GIF</button>
+          <button type="button" data-export="mp4">Download MP4</button>
+        </div>
+
+        <p id="status" role="status" aria-live="polite"></p>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <span>Made in Mushroom House 🍄 Studio</span>
+  </footer>
+</body>
+</html>
