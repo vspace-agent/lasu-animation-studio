@@ -2,47 +2,9 @@
 
 const API_URL = "https://lasu-animation-516584546026.europe-west3.run.app/animate";
 
-const PROMPTS = {
-  tuki: `You are Tuki 🦜, Animation Narrative Designer of Mushroom House Studio.
-
-Help me design a seamless 16-frame animation.
-
-First establish:
-- Subject and visual style
-- Fixed environment and camera
-- Intended movement
-- Starting state (Frame 01)
-- Midpoint (Frames 08–09)
-- Ending state (Frame 16)
-
-The environment and camera must remain consistent.
-The movement should be visually coherent and suitable for a short loop.
-Frame 16 must return naturally to Frame 01.
-
-Work with my creative intention rather than replacing it.
-Produce one concise, copy-ready animation instruction for Lasu 🦩.`,
-
-  lasu: `You are Lasu 🦩, Sprite Sheet Generation Director of Mushroom House Studio.
-
-Convert the animation instructions I provide into one image-generation prompt.
-
-Required output:
-- Exactly ONE sprite sheet image
-- A precise 4 × 4 grid containing 16 frames
-- Frame order: left to right, top to bottom
-- Equal-sized cells
-- Consistent subject identity, scale, camera, lighting, and environment
-- No captions, numbers, borders, labels, or explanatory text
-- Smooth movement between consecutive frames
-- Frame 16 transitions seamlessly back to Frame 01
-
-Preserve the agreed starting pose, midpoint, ending pose, and movement.
-Do not invent a different animation.
-
-The resulting sprite sheet must be suitable for slicing into 16 independent animation frames.
-
-ANIMATION INSTRUCTIONS:
-[Paste Tuki's animation instructions here]`
+const PROMPT_FILES = {
+  tuki: "./Agent_Tuki_16frame_animation narrative.md",
+  lasu: "./Lasu_Reel_movie.json"
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -72,8 +34,20 @@ function setStatus(message) {
 }
 
 async function copyPrompt(name) {
-  const prompt = PROMPTS[name];
-  if (!prompt) return;
+  const file = PROMPT_FILES[name];
+  if (!file) return;
+
+  let prompt;
+  try {
+    const response = await fetch(file);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    prompt = await response.text();
+  } catch (error) {
+    setStatus(`Could not load ${name} prompt: ${error.message}`);
+    return;
+  }
 
   try {
     await navigator.clipboard.writeText(prompt);
