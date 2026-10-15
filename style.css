@@ -289,3 +289,34 @@ footer {
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+
+/* Compact agent-prompt previews and copy confirmation. */
+.prompt-block {
+  position: relative;
+  margin-top: 0.75rem;
+  padding: 0.65rem;
+  border: 1px solid #d9e1db;
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.prompt-preview {
+  max-height: 7rem;
+  overflow: auto;
+  margin: 0 0 0.65rem;
+  padding: 0.35rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 0.75rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #435650;
+}
+
+.prompt-block button {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.8rem;
+}
+
+.prompt-block button.copied {
+  background: #dcece0;
+  border-color: #8cab96;
+}

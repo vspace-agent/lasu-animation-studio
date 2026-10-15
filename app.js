@@ -4,7 +4,7 @@ const API_URL = "https://lasu-animation-516584546026.europe-west3.run.app/animat
 
 const PROMPT_FILES = {
   tuki: "./Agent_Tuki_16frame_animation narrative.md",
-  lasu: "./Lasu_Reel_movie.json"
+  lasu: "./Lasu🦩16-Frame Animation Sprite Sheet.md"
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -33,25 +33,42 @@ function setStatus(message) {
   status.textContent = message;
 }
 
-async function copyPrompt(name) {
-  const file = PROMPT_FILES[name];
-  if (!file) return;
+const promptCache = new Map();
 
+async function getPrompt(name) {
+  if (promptCache.has(name)) return promptCache.get(name);
+  const file = PROMPT_FILES[name];
+  if (!file) throw new Error("Unknown prompt");
+  const response = await fetch(file);
+  if (!response.ok) throw new Error(`Prompt unavailable (${response.status})`);
+  const prompt = await response.text();
+  promptCache.set(name, prompt);
+  return prompt;
+}
+
+async function loadPromptPreviews() {
+  for (const preview of document.querySelectorAll("[data-prompt-preview]")) {
+    try {
+      preview.textContent = await getPrompt(preview.dataset.promptPreview);
+    } catch {
+      preview.textContent = "Prompt preview unavailable.";
+    }
+  }
+}
+
+async function copyPrompt(name, button) {
   let prompt;
   try {
-    const response = await fetch(file);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    prompt = await response.text();
-  } catch (error) {
-    setStatus(`Could not load ${name} prompt: ${error.message}`);
+    prompt = await getPrompt(name);
+  } catch {
+    setStatus("Could not load the prompt.");
     return;
   }
 
+  let copied = false;
   try {
     await navigator.clipboard.writeText(prompt);
-    setStatus(`${name === "tuki" ? "Tuki" : "Lasu"} prompt copied.`);
+    copied = true;
   } catch {
     const field = document.createElement("textarea");
     field.value = prompt;
@@ -59,15 +76,30 @@ async function copyPrompt(name) {
     field.style.left = "-9999px";
     document.body.appendChild(field);
     field.select();
-    const copied = document.execCommand("copy");
+    copied = document.execCommand("copy");
     field.remove();
-    setStatus(copied ? "Prompt copied." : "Clipboard unavailable. Please try again.");
   }
+
+  if (!copied) {
+    setStatus("Clipboard unavailable. Please try again.");
+    return;
+  }
+
+  button.textContent = "✓ Copied!";
+  button.classList.add("copied");
+  clearTimeout(button.copyResetTimer);
+  button.copyResetTimer = setTimeout(() => {
+    button.textContent = "Copy";
+    button.classList.remove("copied");
+  }, 2500);
+  setStatus(`${name === "tuki" ? "Tuki" : "Lasu"} prompt copied.`);
 }
 
 document.querySelectorAll("[data-copy]").forEach((button) => {
-  button.addEventListener("click", () => copyPrompt(button.dataset.copy));
+  button.addEventListener("click", () => copyPrompt(button.dataset.copy, button));
 });
+
+loadPromptPreviews();
 
 function loadImage(file) {
   return new Promise((resolve, reject) => {
