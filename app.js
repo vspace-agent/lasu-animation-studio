@@ -342,22 +342,21 @@ async function shareAnimation(blob, format) {
   const type = format === "gif" ? "image/gif" : "video/mp4";
   const file = new File([blob], `lasu-animation.${format}`, { type });
 
-  if (navigator.share && navigator.canShare &&
-      navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: "Lasu Animation" });
-      setStatus(`${format.toUpperCase()} shared. You can save it using your device's options.`);
-    } catch (error) {
-      if (error.name === "AbortError") {
-        setStatus("Sharing cancelled. Your animation is ready to export again.");
-      } else {
-        downloadAnimation(blob, format);
-        setStatus("Sharing unavailable. Animation downloaded instead.");
-      }
+  if (!navigator.share || !navigator.canShare ||
+      !navigator.canShare({ files: [file] })) {
+    setStatus("This browser cannot open file-saving options. Try Safari on iPhone or a browser that supports file sharing.");
+    return;
+  }
+
+  try {
+    await navigator.share({ files: [file], title: "Lasu Animation" });
+    setStatus(`${format.toUpperCase()} sent to your device's sharing options.`);
+  } catch (error) {
+    if (error.name === "AbortError") {
+      setStatus("Saving cancelled. Tap Save to choose another destination.");
+    } else {
+      setStatus(`Could not open saving options: ${error.message}`);
     }
-  } else {
-    downloadAnimation(blob, format);
-    setStatus("File sharing is not supported here. Animation downloaded instead.");
   }
 }
 
@@ -430,7 +429,7 @@ async function exportAnimation(format, action = "download") {
     preparedExports.set(format, { signature, blob });
 
     if (action === "share") {
-      setStatus(`${format.toUpperCase()} ready. Tap Save / Share ${format.toUpperCase()} again to open your device's sharing options.`);
+      setStatus(`${format.toUpperCase()} ready. Tap Save ${format.toUpperCase()} again to choose where to save.`);
     } else {
       downloadAnimation(blob, format);
       setStatus(`${format.toUpperCase()} ready. Download started.`);
