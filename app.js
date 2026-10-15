@@ -327,7 +327,43 @@ function skipRules() {
   return rules;
 }
 
-async function exportAnimation(format) {
+function downloadAnimation(blob, format) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `lasu-animation.${format}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+async function shareAnimation(blob, format) {
+  const type = format === "gif" ? "image/gif" : "video/mp4";
+  const file = new File([blob], `lasu-animation.${format}`, { type });
+
+  if (navigator.share && navigator.canShare &&
+      navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: "Lasu Animation" });
+      setStatus(`${format.toUpperCase()} shared. You can save it using your device's options.`);
+    } catch (error) {
+      if (error.name === "AbortError") {
+        setStatus("Sharing cancelled. Your animation is ready to export again.");
+      } else {
+        downloadAnimation(blob, format);
+        setStatus("Sharing unavailable. Animation downloaded instead.");
+      }
+    }
+  } else {
+    downloadAnimation(blob, format);
+    setStatus("File sharing is not supported here. Animation downloaded instead.");
+  }
+}
+
+const preparedExports = new Map();
+
+async function exportAnimation(format, action = "download") {
   if (busy) return;
 
   if (!sheets.length || !selectedFrames.length) {
@@ -335,28 +371,49 @@ async function exportAnimation(format) {
     return;
   }
 
-  const cycles = Number($("#cycles").value);
-  if (!Number.isInteger(cycles) || cycles < 1 || cycles > 10) {
-    setStatus("GIF cycles must be between 1 and 10.");
+  const cycles = format === "mp4" ? Number($("#cycles").value) : 1;
+  if (format === "mp4" &&
+      (!Number.isInteger(cycles) || cycles < 1 || cycles > 10)) {
+    setStatus("MP4 cycles must be between 1 and 10.");
+    return;
+  }
+
+  const rules = JSON.stringify(skipRules());
+  const signature = JSON.stringify({
+    format,
+    cycles,
+    duration: durationInput.value,
+    rules,
+    sheets: sheets.map((file) => [
+      file.name, file.size, file.lastModified, file.type
+    ])
+  });
+
+  const prepared = preparedExports.get(format);
+  if (prepared && prepared.signature === signature) {
+    if (action === "share") {
+      // This call runs directly in the click handler's user activation.
+      await shareAnimation(prepared.blob, format);
+    } else {
+      downloadAnimation(prepared.blob, format);
+      setStatus(`${format.toUpperCase()} ready. Download started.`);
+    }
     return;
   }
 
   const data = new FormData();
-
   for (const sheet of sheets) {
     data.append("sheets", sheet, sheet.name);
   }
-
   data.append("format", format);
   data.append("duration_ms", durationInput.value);
   data.append("cycles", String(cycles));
-  data.append("skip_rules", JSON.stringify(skipRules()));
+  data.append("skip_rules", rules);
 
   busy = true;
   document.querySelectorAll("[data-export]").forEach((button) => {
     button.disabled = true;
   });
-
   setStatus(`Creating ${format.toUpperCase()}…`);
 
   try {
@@ -364,24 +421,20 @@ async function exportAnimation(format) {
       method: "POST",
       body: data
     });
-
     if (!response.ok) {
       const message = await response.text();
       throw new Error(`Export failed (${response.status}): ${message.slice(0, 200)}`);
     }
 
     const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    preparedExports.set(format, { signature, blob });
 
-    link.href = url;
-    link.download = `lasu-animation.${format}`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    setStatus(`${format.toUpperCase()} ready. Download started.`);
+    if (action === "share") {
+      setStatus(`${format.toUpperCase()} ready. Tap Save / Share ${format.toUpperCase()} again to open your device's sharing options.`);
+    } else {
+      downloadAnimation(blob, format);
+      setStatus(`${format.toUpperCase()} ready. Download started.`);
+    }
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -394,6 +447,6 @@ async function exportAnimation(format) {
 
 document.querySelectorAll("[data-export]").forEach((button) => {
   button.addEventListener("click", () =>
-    exportAnimation(button.dataset.export)
+    exportAnimation(button.dataset.export, button.dataset.action)
   );
 });

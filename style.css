@@ -333,3 +333,28 @@ footer {
 .create-next-step p {
   margin-bottom: 0;
 }
+
+/* Distinct GIF/MP4 export controls and mobile sharing guidance. */
+.export-format {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid #d9e1db;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.export-format h3 {
+  margin: 0 0 0.4rem;
+}
+
+.export-format p,
+.export-hint {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.export-format input {
+  display: block;
+  max-width: 7rem;
+  margin: 0.4rem 0 0.8rem;
+}
