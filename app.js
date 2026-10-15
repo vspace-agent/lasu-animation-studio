@@ -4,7 +4,7 @@ const API_URL = "https://lasu-animation-516584546026.europe-west3.run.app/animat
 
 const PROMPT_FILES = {
   tuki: "./Agent_Tuki_16frame_animation narrative.md",
-  lasu: "./Lasu🦩16-Frame Animation Sprite Sheet.md"
+  lasu: "./Agent_16-Frame Animation Sprite Sheet"
 };
 
 const $ = (selector) => document.querySelector(selector);

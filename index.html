@@ -34,11 +34,14 @@
       <section class="panel" id="create">
         <p class="eyebrow">01 / Create</p>
         <h2>Imagine a little movement</h2>
-        <p>Use these two task-agent prompts with ChatGPT or Gemini.</p>
+        <p>Use a familiar multimodal AI chatbot—such as ChatGPT, Google Gemini, or Claude—to create your animation images.</p>
+        <p><strong>Open a new chat for each agent.</strong> Copy its initiation prompt into the chat and send it. This turns that conversation into a specialist with one task.</p>
 
         <article class="agent-card">
           <h3>Tuki 🦜</h3>
-          <p>Design the story and movement of a seamless 16-frame animation.</p>
+          <p><strong>1. Create your narrative agent.</strong> Open a new AI chat, copy Tuki's initiation prompt below, and send it.</p>
+          <p>Describe your characters, visual style, setting, and the little story you want to animate. A 16-frame sheet can become roughly 4–5 seconds of animation, depending on playback speed, so choose movement that can happen naturally in that short time.</p>
+          <p>Tuki turns your idea into structured animation instructions. For a longer story, ask Tuki to plan up to five connected 16-frame segments with consistent characters and surroundings.</p>
           <div class="prompt-block">
             <pre class="prompt-preview" data-prompt-preview="tuki">Loading prompt…</pre>
             <button type="button" data-copy="tuki">Copy</button>
@@ -47,12 +50,19 @@
 
         <article class="agent-card">
           <h3>Lasu 🦩</h3>
-          <p>Turn the animation instructions into a 4 × 4 sprite sheet.</p>
+          <p><strong>2. Create your sprite-sheet agent.</strong> Open another new AI chat, copy Lasu's initiation prompt below, and send it.</p>
+          <p>Give Lasu the animation instructions produced by Tuki. Lasu generates <strong>one 4 × 4 image containing 16 sequential frames</strong> per request.</p>
+          <p>If Tuki planned several connected segments, give their instructions to Lasu <strong>one at a time</strong>. Download each resulting image and save it to your photo library.</p>
           <div class="prompt-block">
             <pre class="prompt-preview" data-prompt-preview="lasu">Loading prompt…</pre>
             <button type="button" data-copy="lasu">Copy</button>
           </div>
         </article>
+
+        <div class="create-next-step">
+          <strong>3. Bring your images here.</strong>
+          <p>Upload one to five downloaded sprite sheets in the Animate section below. Preview the movement, adjust its timing, and export your animation.</p>
+        </div>
       </section>
 
       <section class="panel" id="animate">

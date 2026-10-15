@@ -320,3 +320,16 @@ footer {
   background: #dcece0;
   border-color: #8cab96;
 }
+
+/* Final step in the Tuki → Lasu → Animate workflow. */
+.create-next-step {
+  margin-top: 1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid #d9e1db;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.create-next-step p {
+  margin-bottom: 0;
+}
