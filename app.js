@@ -309,6 +309,7 @@ input.addEventListener("change", async () => {
     renderFrameGrid();
     refreshSelection();
     setStatus(`${frames.length} frames loaded. Tap a frame to exclude it.`);
+    await saveUploadedSheetsToCloud(files);
   } catch (error) {
     setStatus(error.message);
   }
@@ -338,25 +339,132 @@ function downloadAnimation(blob, format) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-async function shareAnimation(blob, format) {
-  const type = format === "gif" ? "image/gif" : "video/mp4";
-  const file = new File([blob], `lasu-animation.${format}`, { type });
 
-  if (!navigator.share || !navigator.canShare ||
-      !navigator.canShare({ files: [file] })) {
-    setStatus("This browser cannot open file-saving options. Try Safari on iPhone or a browser that supports file sharing.");
+const API_BASE = API_URL.replace(/\/animate$/, "");
+const DEVICE_KEY = "lasu-device-token";
+const LAST_PROJECT_KEY = "lasu-last-project";
+let deviceToken = localStorage.getItem(DEVICE_KEY);
+
+function selectedProject() {
+  const selection = $("#project-select").value;
+  if (selection === "__new__") {
+    return $("#new-project").value.trim().toLowerCase()
+      .replace(/\s+/g, "_");
+  }
+  return selection;
+}
+
+async function refreshProjects() {
+  if (!deviceToken) {
+    $("#pairing-state").textContent = "Pair this device once to enable private cloud storage.";
+    $("#pairing-controls").hidden = false;
+    $("#project-controls").hidden = true;
+    return;
+  }
+  try {
+    const response = await fetch(`${API_BASE}/projects`, {
+      headers: { Authorization: `Bearer ${deviceToken}` }
+    });
+    if (response.status === 401) {
+      deviceToken = null;
+      localStorage.removeItem(DEVICE_KEY);
+      await refreshProjects();
+      return;
+    }
+    if (!response.ok) throw new Error(`Project lookup failed (${response.status}).`);
+    const payload = await response.json();
+    const select = $("#project-select");
+    const previous = localStorage.getItem(LAST_PROJECT_KEY) || select.value;
+    select.replaceChildren(new Option("Choose a project", ""));
+    for (const project of payload.projects) {
+      select.add(new Option(project.name, project.name));
+    }
+    select.add(new Option("+ New Project", "__new__"));
+    if (Array.from(select.options).some((option) => option.value === previous)) {
+      select.value = previous;
+    }
+    $("#pairing-state").textContent = "This device is paired with Mushroom House 🍄 Studio.";
+    $("#pairing-controls").hidden = true;
+    $("#project-controls").hidden = false;
+    $("#new-project-controls").hidden = select.value !== "__new__";
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+$("#pair-device").addEventListener("click", async () => {
+  const code = $("#pairing-code").value.trim().toUpperCase();
+  if (!/^[A-Z2-9]{8}$/.test(code)) {
+    setStatus("Enter the eight-character pairing code.");
+    return;
+  }
+  const button = $("#pair-device");
+  button.disabled = true;
+  try {
+    const body = new FormData();
+    body.append("code", code);
+    const response = await fetch(`${API_BASE}/pair`, { method: "POST", body });
+    if (!response.ok) throw new Error("Pairing code invalid, expired, or already used.");
+    const payload = await response.json();
+    deviceToken = payload.device_token;
+    localStorage.setItem(DEVICE_KEY, deviceToken);
+    $("#pairing-code").value = "";
+    await refreshProjects();
+    setStatus("Device paired. Choose or create an animation project.");
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#project-select").addEventListener("change", async () => {
+  const value = $("#project-select").value;
+  $("#new-project-controls").hidden = value !== "__new__";
+  if (value && value !== "__new__") {
+    localStorage.setItem(LAST_PROJECT_KEY, value);
+    if (frames.length && input.files.length) {
+      await saveUploadedSheetsToCloud(Array.from(input.files));
+    }
+  }
+});
+
+$("#new-project").addEventListener("change", async () => {
+  if (frames.length && input.files.length && selectedProject()) {
+    await saveUploadedSheetsToCloud(Array.from(input.files));
+  }
+});
+
+refreshProjects();
+
+async function saveUploadedSheetsToCloud(files) {
+  if (!deviceToken) return;
+  const project = selectedProject();
+  if (!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(project || "")) {
+    setStatus(`${frames.length} frames loaded. Choose a project to save sheets to GCS.`);
     return;
   }
 
+  const data = new FormData();
+  for (const file of files) data.append("sheets", file, file.name);
+  data.append("project", project);
+  setStatus(`Saving ${files.length} sprite sheet(s) to GCS…`);
+
   try {
-    await navigator.share({ files: [file], title: "Lasu Animation" });
-    setStatus(`${format.toUpperCase()} sent to your device's sharing options.`);
-  } catch (error) {
-    if (error.name === "AbortError") {
-      setStatus("Saving cancelled. Tap Save to choose another destination.");
-    } else {
-      setStatus(`Could not open saving options: ${error.message}`);
+    const response = await fetch(`${API_BASE}/assets/sprites`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${deviceToken}` },
+      body: data
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Sprite storage failed (${response.status}): ${message.slice(0, 160)}`);
     }
+    localStorage.setItem(LAST_PROJECT_KEY, project);
+    await refreshProjects();
+    setStatus(`${frames.length} frames loaded; sprite sheets saved to GCS in ${project}.`);
+  } catch (error) {
+    setStatus(`${frames.length} frames loaded locally. ${error.message}`);
   }
 }
 
@@ -364,75 +472,72 @@ const preparedExports = new Map();
 
 async function exportAnimation(format, action = "download") {
   if (busy) return;
-
   if (!sheets.length || !selectedFrames.length) {
     setStatus("Please upload sheets and keep at least one frame.");
     return;
   }
-
-  const cycles = format === "mp4" ? Number($("#cycles").value) : 1;
-  if (format === "mp4" &&
-      (!Number.isInteger(cycles) || cycles < 1 || cycles > 10)) {
-    setStatus("MP4 cycles must be between 1 and 10.");
-    return;
+  const cloud = action === "cloud";
+  const project = cloud ? selectedProject() : null;
+  if (cloud) {
+    if (!deviceToken) {
+      setStatus("Pair this device before saving to GCS.");
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(project || "")) {
+      setStatus("Choose a project or enter a name using letters, numbers, _ or -.");
+      return;
+    }
   }
 
   const rules = JSON.stringify(skipRules());
   const signature = JSON.stringify({
-    format,
-    cycles,
-    duration: durationInput.value,
-    rules,
+    format, duration: durationInput.value, rules,
     sheets: sheets.map((file) => [
       file.name, file.size, file.lastModified, file.type
     ])
   });
-
-  const prepared = preparedExports.get(format);
-  if (prepared && prepared.signature === signature) {
-    if (action === "share") {
-      // This call runs directly in the click handler's user activation.
-      await shareAnimation(prepared.blob, format);
+  const cacheKey = `${format}:${cloud ? project : "device"}`;
+  const prepared = preparedExports.get(cacheKey);
+  if (!cloud && prepared && prepared.signature === signature) {
+    if (cloud) {
+      setStatus(`${format.toUpperCase()} already saved to GCS in ${project}.`);
     } else {
       downloadAnimation(prepared.blob, format);
-      setStatus(`${format.toUpperCase()} ready. Download started.`);
+      setStatus(`${format.toUpperCase()} download started.`);
     }
     return;
   }
 
   const data = new FormData();
-  for (const sheet of sheets) {
-    data.append("sheets", sheet, sheet.name);
-  }
+  for (const sheet of sheets) data.append("sheets", sheet, sheet.name);
   data.append("format", format);
   data.append("duration_ms", durationInput.value);
-  data.append("cycles", String(cycles));
+  data.append("cycles", "1");
   data.append("skip_rules", rules);
+  if (cloud) data.append("project", project);
 
   busy = true;
   document.querySelectorAll("[data-export]").forEach((button) => {
     button.disabled = true;
   });
-  setStatus(`Creating ${format.toUpperCase()}…`);
-
+  setStatus(cloud ? `Saving ${format.toUpperCase()} to GCS…`
+                  : `Preparing ${format.toUpperCase()} download…`);
   try {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      body: data
-    });
+    const headers = cloud ? { Authorization: `Bearer ${deviceToken}` } : {};
+    const response = await fetch(API_URL, { method: "POST", headers, body: data });
     if (!response.ok) {
       const message = await response.text();
       throw new Error(`Export failed (${response.status}): ${message.slice(0, 200)}`);
     }
-
     const blob = await response.blob();
-    preparedExports.set(format, { signature, blob });
-
-    if (action === "share") {
-      setStatus(`${format.toUpperCase()} ready. Tap Save ${format.toUpperCase()} again to choose where to save.`);
+    preparedExports.set(cacheKey, { signature, blob });
+    if (cloud) {
+      localStorage.setItem(LAST_PROJECT_KEY, project);
+      await refreshProjects();
+      setStatus(`${format.toUpperCase()} saved to GCS in ${project}.`);
     } else {
       downloadAnimation(blob, format);
-      setStatus(`${format.toUpperCase()} ready. Download started.`);
+      setStatus(`${format.toUpperCase()} download started.`);
     }
   } catch (error) {
     setStatus(error.message);
