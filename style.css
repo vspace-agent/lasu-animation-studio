@@ -374,3 +374,18 @@ footer {
 [hidden] {
   display: none !important;
 }
+
+/* Keep infrequently used creation instructions collapsed by default. */
+.create-dropdown > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: inherit;
+  line-height: 1.5;
+}
+.create-dropdown > summary span {
+  display: block;
+  font-size: 0.9em;
+  font-weight: 400;
+  opacity: 0.75;
+}
+.create-dropdown[open] > summary { margin-bottom: 1.25rem; }
