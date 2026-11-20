@@ -389,3 +389,44 @@ footer {
   opacity: 0.75;
 }
 .create-dropdown[open] > summary { margin-bottom: 1.25rem; }
+
+/* Independent sprite-sheet batch previews and per-animation editing. */
+.batch-toolbar, .batch-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 1rem 0;
+}
+.batch-toolbar span { font-size: 0.85rem; }
+.batch-previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 1rem;
+}
+.batch-card {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid #d9e1db;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.65);
+}
+.batch-card:not(.batch-selected) { opacity: 0.7; }
+.batch-card-header { display: flex; gap: 0.5rem; align-items: start; }
+.batch-card-header label { overflow-wrap: anywhere; font-size: 0.85rem; }
+.batch-card canvas.batch-canvas {
+  display: block;
+  width: min(100%, 220px);
+  aspect-ratio: 1;
+  margin: 0.7rem auto;
+  border: 1px solid #d5dfda;
+  border-radius: 0.7rem;
+}
+.batch-card input[type="range"] { width: 100%; }
+.batch-card .frame-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.batch-card .frame-grid canvas { width: 100%; }
+.batch-card .batch-edit-toggle { margin-top: 0.6rem; }
+.batch-save select { max-width: 100%; }
+#batch-status { min-height: 1.5rem; font-size: 0.85rem; }

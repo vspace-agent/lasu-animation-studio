@@ -8,6 +8,7 @@
   <title>Lasu 🦩 Animation Studio</title>
   <link rel="stylesheet" href="./style.css">
   <script src="./app.js" defer></script>
+  <script src="./batch.js" defer></script>
 </head>
 <body>
   <div class="background" aria-hidden="true"></div>
@@ -90,6 +91,32 @@
         </div>
         <canvas id="preview" width="256" height="256"
                 aria-label="Animation preview"></canvas>
+      </section>
+
+      <section class="panel" id="batch-animate">
+        <p class="eyebrow">02B / Independent animations</p>
+        <h2>One animation for each sprite sheet</h2>
+        <p>Upload 1–10 sheets. Each becomes its own looping preview. Adjust any animation, select the ones to keep, then save them together to your chosen GCS project.</p>
+        <label class="upload-zone" for="batch-sheets">
+          <span>Choose 1–10 independent sprite sheets</span>
+          <small>PNG or JPEG · 4 × 4 grid · 16 frames per sheet · maximum 5 MB each</small>
+          <input id="batch-sheets" type="file" accept="image/png,image/jpeg" multiple>
+        </label>
+        <div class="batch-toolbar">
+          <button type="button" id="batch-select-all">Select all</button>
+          <button type="button" id="batch-select-none">Select none</button>
+          <span id="batch-count" aria-live="polite">No sheets loaded</span>
+        </div>
+        <div id="batch-previews" class="batch-previews"></div>
+        <div class="batch-save">
+          <label for="batch-format">Save selected animations as</label>
+          <select id="batch-format">
+            <option value="gif">GIF · Continuous loop</option>
+            <option value="mp4">MP4 · One cycle</option>
+          </select>
+          <button type="button" id="batch-save" disabled>Save selected → GCS</button>
+        </div>
+        <p id="batch-status" role="status" aria-live="polite"></p>
       </section>
 
       <section class="panel" id="export">
