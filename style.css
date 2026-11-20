@@ -430,3 +430,30 @@ footer {
 .batch-card .batch-edit-toggle { margin-top: 0.6rem; }
 .batch-save select { max-width: 100%; }
 #batch-status { min-height: 1.5rem; font-size: 0.85rem; }
+
+
+/* Advanced animation: isolated, collapsed workflow. */
+#advanced-animation {
+  background: #dce4df;
+  border: 1px solid #a4b7ae;
+  border-radius: 1.25rem;
+  padding: 1.15rem 1.3rem;
+}
+
+#advanced-animation > summary {
+  color: #304b43;
+}
+
+#advanced-animation > summary span {
+  color: #526b62;
+  opacity: 1;
+}
+
+#advanced-animation[open] {
+  background: #dce4df;
+}
+
+#advanced-animation > .panel {
+  background: rgba(249, 249, 245, 0.96);
+  border-color: #bdcbc2;
+}
