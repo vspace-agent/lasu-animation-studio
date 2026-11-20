@@ -309,7 +309,6 @@ input.addEventListener("change", async () => {
     renderFrameGrid();
     refreshSelection();
     setStatus(`${frames.length} frames loaded. Tap a frame to exclude it.`);
-    await saveUploadedSheetsToCloud(files);
   } catch (error) {
     setStatus(error.message);
   }
@@ -418,21 +417,16 @@ $("#pair-device").addEventListener("click", async () => {
   }
 });
 
-$("#project-select").addEventListener("change", async () => {
+$("#project-select").addEventListener("change", () => {
   const value = $("#project-select").value;
   $("#new-project-controls").hidden = value !== "__new__";
   if (value && value !== "__new__") {
     localStorage.setItem(LAST_PROJECT_KEY, value);
-    if (frames.length && input.files.length) {
-      await saveUploadedSheetsToCloud(Array.from(input.files));
-    }
   }
 });
 
-$("#new-project").addEventListener("change", async () => {
-  if (frames.length && input.files.length && selectedProject()) {
-    await saveUploadedSheetsToCloud(Array.from(input.files));
-  }
+$("#new-project").addEventListener("change", () => {
+  // Naming a destination must never upload files automatically.
 });
 
 refreshProjects();

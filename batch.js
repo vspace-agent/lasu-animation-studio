@@ -237,7 +237,7 @@ batchSaveButton.addEventListener("click", async () => {
     return;
   }
   if (!deviceToken) {
-    batchMessage("Pair this device in the Export section before saving to GCS.");
+    batchMessage("Pair this device above the project selector before saving to GCS.");
     return;
   }
   const project = selectedProject();
