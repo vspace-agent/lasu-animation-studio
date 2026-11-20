@@ -242,7 +242,7 @@ batchSaveButton.addEventListener("click", async () => {
   }
   const project = selectedProject();
   if (!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(project || "")) {
-    batchMessage("Choose or create a project in the Export section first.");
+    batchMessage("Choose or create a destination project directly above Save selected → GCS.");
     return;
   }
   const format = document.querySelector("#batch-format").value;

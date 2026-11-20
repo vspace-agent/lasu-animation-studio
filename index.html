@@ -108,6 +108,22 @@
           <span id="batch-count" aria-live="polite">No sheets loaded</span>
         </div>
         <div id="batch-previews" class="batch-previews"></div>
+        <div class="batch-destination">
+          <h3>Save to project</h3>
+          <p>Check the destination before saving your selected animations.</p>
+          <div id="project-controls" hidden>
+            <label for="project-select">Animation project</label>
+            <select id="project-select">
+              <option value="">Choose a project</option>
+              <option value="__new__">+ New Project</option>
+            </select>
+            <div id="new-project-controls" hidden>
+              <label for="new-project">New project name</label>
+              <input id="new-project" type="text" maxlength="80"
+                     placeholder="e.g. autumn_mushroom">
+            </div>
+          </div>
+        </div>
         <div class="batch-save">
           <label for="batch-format">Save selected animations as</label>
           <select id="batch-format">
@@ -132,18 +148,7 @@
                    autocapitalize="characters" spellcheck="false" placeholder="8-character code">
             <button type="button" id="pair-device">Pair this device</button>
           </div>
-          <div id="project-controls" hidden>
-            <label for="project-select">Animation project</label>
-            <select id="project-select">
-              <option value="">Choose a project</option>
-              <option value="__new__">+ New Project</option>
-            </select>
-            <div id="new-project-controls" hidden>
-              <label for="new-project">New project name</label>
-              <input id="new-project" type="text" maxlength="80"
-                     placeholder="e.g. autumn_mushroom">
-            </div>
-          </div>
+
         </div>
 
         <div class="export-format">

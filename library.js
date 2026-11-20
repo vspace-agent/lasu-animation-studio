@@ -9,6 +9,10 @@ const status = document.querySelector("#library-status");
 const saveButton = document.querySelector("#save-selected");
 const allButton = document.querySelector("#select-all");
 const clearButton = document.querySelector("#clear-selection");
+const moveDestination = document.querySelector("#move-destination");
+const moveButton = document.querySelector("#move-selected");
+let moving = false;
+
 let assets = [];
 let selected = new Set();
 let previewUrls = [];
@@ -18,6 +22,10 @@ function message(value) { status.textContent = value; }
 function headers() { return { Authorization: `Bearer ${token}` }; }
 function updateSelection() {
   saveButton.disabled = selected.size === 0 || [...selected].some(path => !assetBlobs.has(path));
+  moveButton.disabled = moving || selected.size === 0 ||
+    !moveDestination.value || moveDestination.value === projectSelect.value;
+  moveButton.textContent = `Move Selected (${selected.size})`;
+
   clearButton.disabled = selected.size === 0;
   allButton.disabled = assets.length === 0 || selected.size === assets.length;
   saveButton.textContent = `Save Selected (${selected.size})`;
@@ -123,6 +131,11 @@ async function initialize() {
     const payload = await response.json();
     document.querySelector("#library-auth").textContent = "Private device access enabled.";
     for (const project of payload.projects) projectSelect.add(new Option(project.name, project.name));
+    for (const project of payload.projects) {
+      moveDestination.add(new Option(project.name, project.name));
+    }
+    moveDestination.disabled = false;
+
     projectSelect.disabled = false;
     const previous = localStorage.getItem("lasu-last-project");
     if (previous && Array.from(projectSelect.options).some(option => option.value === previous)) {
@@ -139,6 +152,45 @@ projectSelect.addEventListener("change", () => {
 });
 allButton.addEventListener("click", () => { selected = new Set(assets.map(a => a.path)); updateSelection(); });
 clearButton.addEventListener("click", () => { selected.clear(); updateSelection(); });
+moveDestination.addEventListener("change", updateSelection);
+moveButton.addEventListener("click", async () => {
+  const sourceProject = projectSelect.value;
+  const destinationProject = moveDestination.value;
+  const paths = assets.filter(asset => selected.has(asset.path)).map(asset => asset.path);
+  if (!paths.length || !destinationProject || destinationProject === sourceProject || moving) return;
+  if (!window.confirm(`Move ${paths.length} selected file(s) from "${sourceProject}" to "${destinationProject}"?`)) return;
+  moving = true;
+  updateSelection();
+  message(`Moving ${paths.length} file(s) to ${destinationProject}…`);
+  try {
+    const response = await fetch(`${API}/assets/move`, {
+      method: "POST",
+      headers: { ...headers(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_project: sourceProject,
+        destination_project: destinationProject,
+        paths
+      })
+    });
+    if (!response.ok) {
+      let detail = `Move failed (${response.status}).`;
+      try {
+        const error = await response.json();
+        if (typeof error.detail === "string") detail = error.detail;
+      } catch (_) {}
+      throw new Error(detail);
+    }
+    const result = await response.json();
+    await loadAssets();
+    message(`Moved ${result.moved.length} file(s) to ${destinationProject}.`);
+  } catch (error) {
+    message(`${error.message} Refresh the library to verify any partial moves.`);
+  } finally {
+    moving = false;
+    updateSelection();
+  }
+});
+
 saveButton.addEventListener("click", () => {
   const chosen = assets.filter(asset => selected.has(asset.path));
   if (!chosen.length) return;

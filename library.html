@@ -31,6 +31,14 @@
         <button id="clear-selection" type="button" disabled>Clear</button>
         <button id="save-selected" type="button" disabled>Save Selected (0)</button>
       </div>
+      <div class="library-move">
+        <label for="move-destination">Move selected files to project</label>
+        <select id="move-destination" disabled>
+          <option value="">Choose destination project</option>
+        </select>
+        <button id="move-selected" type="button" disabled>Move Selected (0)</button>
+        <p>Moves the selected GIFs, MP4s, or sprite sheets between projects. Files are not copied.</p>
+      </div>
       <p id="library-status" role="status" aria-live="polite"></p>
       <div id="library-grid" class="library-grid"></div>
     </section>
