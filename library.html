@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2f0e9">
+  <title>Lasu 🦩 · Cloud Library</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./library.css">
+  <script src="./library.js" defer></script>
+</head>
+<body>
+  <div class="background" aria-hidden="true"></div>
+  <header class="site-header">
+    <span class="studio-label">Mushroom House 🍄 Studio</span>
+    <h1>Lasu <span aria-hidden="true">🦩</span></h1>
+    <p>☁️ Cloud Library</p>
+  </header>
+  <main class="workspace">
+    <nav class="steps" aria-label="Studio navigation">
+      <a href="./index.html#animate">← Animation Studio</a>
+      <a href="./library.html" aria-current="page">☁️ Cloud Library</a>
+    </nav>
+    <section class="panel">
+      <h2>Your private animations</h2>
+      <p id="library-auth">Checking device pairing…</p>
+      <label for="library-project">Project</label>
+      <select id="library-project" disabled><option value="">Choose a project</option></select>
+      <div class="library-toolbar">
+        <button id="select-all" type="button" disabled>Select All</button>
+        <button id="clear-selection" type="button" disabled>Clear</button>
+        <button id="save-selected" type="button" disabled>Save Selected (0)</button>
+      </div>
+      <p id="library-status" role="status" aria-live="polite"></p>
+      <div id="library-grid" class="library-grid"></div>
+    </section>
+  </main>
+  <footer>Made in Mushroom House 🍄 Studio</footer>
+</body>
+</html>
