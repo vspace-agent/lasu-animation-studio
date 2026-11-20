@@ -12,11 +12,12 @@ const clearButton = document.querySelector("#clear-selection");
 let assets = [];
 let selected = new Set();
 let previewUrls = [];
+let assetBlobs = new Map();
 
 function message(value) { status.textContent = value; }
 function headers() { return { Authorization: `Bearer ${token}` }; }
 function updateSelection() {
-  saveButton.disabled = selected.size === 0;
+  saveButton.disabled = selected.size === 0 || [...selected].some(path => !assetBlobs.has(path));
   clearButton.disabled = selected.size === 0;
   allButton.disabled = assets.length === 0 || selected.size === assets.length;
   saveButton.textContent = `Save Selected (${selected.size})`;
@@ -43,6 +44,7 @@ async function fetchAsset(asset) {
 function resetGrid() {
   for (const url of previewUrls) URL.revokeObjectURL(url);
   previewUrls = [];
+  assetBlobs.clear();
   grid.replaceChildren();
   assets = [];
   selected.clear();
@@ -98,6 +100,8 @@ async function loadAssets() {
       try {
         const blob = await fetchAsset(asset);
         if (projectSelect.value !== project) break;
+        assetBlobs.set(asset.path, blob);
+        updateSelection();
         const url = URL.createObjectURL(blob);
         previewUrls.push(url);
         card.querySelector("img,video").src = url;
@@ -135,24 +139,26 @@ projectSelect.addEventListener("change", () => {
 });
 allButton.addEventListener("click", () => { selected = new Set(assets.map(a => a.path)); updateSelection(); });
 clearButton.addEventListener("click", () => { selected.clear(); updateSelection(); });
-saveButton.addEventListener("click", async () => {
+saveButton.addEventListener("click", () => {
   const chosen = assets.filter(asset => selected.has(asset.path));
   if (!chosen.length) return;
+  if (chosen.some(asset => !assetBlobs.has(asset.path))) {
+    message("Selected files are still loading. Please wait.");
+    return;
+  }
+  const files = chosen.map(asset => {
+    const blob = assetBlobs.get(asset.path);
+    return new File([blob], asset.path.split("/").pop(), { type: blob.type });
+  });
+  if (!navigator.share || !navigator.canShare || !navigator.canShare({ files })) {
+    message("This browser cannot share this selection. Try fewer files or one media type.");
+    return;
+  }
   saveButton.disabled = true;
-  message(`Preparing ${chosen.length} file(s) for sharing…`);
-  try {
-    const files = [];
-    for (const asset of chosen) {
-      const blob = await fetchAsset(asset);
-      files.push(new File([blob], asset.path.split("/").pop(), { type: blob.type }));
-    }
-    if (!navigator.share || !navigator.canShare || !navigator.canShare({ files })) {
-      throw new Error("This browser cannot share this selection. Try fewer files or one media type.");
-    }
-    await navigator.share({ files });
-    message(`${files.length} file(s) sent to the device share sheet.`);
-  } catch (error) {
-    message(error.name === "AbortError" ? "Sharing cancelled." : error.message);
-  } finally { updateSelection(); }
+  message(`Opening device share sheet for ${files.length} file(s)…`);
+  navigator.share({ files }).then(
+    () => message(`${files.length} file(s) sent to the device share sheet.`),
+    error => message(error.name === "AbortError" ? "Sharing cancelled." : error.message)
+  ).finally(updateSelection);
 });
 initialize();
