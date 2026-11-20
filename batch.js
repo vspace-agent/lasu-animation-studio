@@ -190,7 +190,7 @@ batchInput.addEventListener("change", async () => {
         image.naturalHeight < 4 ||
         image.naturalWidth * image.naturalHeight > 4_000_000) ||
         images.reduce((sum, image) =>
-          sum + image.naturalWidth * image.naturalHeight, 0) > 24_000_000) {
+          sum + image.naturalWidth * image.naturalHeight, 0) > 20_000_000) {
       throw new Error("Image dimensions exceed the supported batch limits.");
     }
     const items = images.map((image, index) => ({
@@ -229,6 +229,55 @@ document.querySelector("#batch-select-none").addEventListener("click", () => {
   batchUpdateSelection();
 });
 
+const LASU_BACKGROUND_JOB_KEY = "lasu-background-job";
+const batchJobsURL = API_URL.slice(0, -"/animate".length) + "/jobs";
+let batchPollTimer = null;
+
+async function batchPollJob(jobId) {
+  if (!deviceToken) return;
+  try {
+    const response = await fetch(`${batchJobsURL}/${encodeURIComponent(jobId)}`, {
+      headers: {Authorization: `Bearer ${deviceToken}`},
+      cache: "no-store"
+    });
+    if (!response.ok) throw new Error(`Status unavailable (${response.status})`);
+    const job = await response.json();
+    const results = job.results || [];
+    const running = results.filter((state) => state === "running").length;
+    const failed = results.filter((state) => state === "failed").length;
+    const retrying = results.filter((state) => state === "retrying").length;
+    batchMessage(
+      `Cloud job: ${job.completed}/${job.total} saved · ` +
+      `${running} running · ${retrying} retrying · ${failed} failed. ` +
+      (job.status === "completed"
+        ? "All animations are in Cloud Library."
+        : "Processing continues even if this browser closes.")
+    );
+    if (job.status === "completed" || results.every(
+      (state) => state === "completed" || state === "failed"
+    )) {
+      clearInterval(batchPollTimer);
+      batchPollTimer = null;
+      localStorage.removeItem(LASU_BACKGROUND_JOB_KEY);
+      await refreshProjects();
+    }
+  } catch (error) {
+    batchMessage(`Cloud job ${jobId.slice(0, 8)}: ${error.message}. Will check again.`);
+  }
+}
+
+function batchWatchJob(jobId) {
+  if (batchPollTimer) clearInterval(batchPollTimer);
+  localStorage.setItem(LASU_BACKGROUND_JOB_KEY, jobId);
+  batchPollJob(jobId);
+  batchPollTimer = setInterval(() => batchPollJob(jobId), 5000);
+}
+
+const previousBatchJob = localStorage.getItem(LASU_BACKGROUND_JOB_KEY);
+if (previousBatchJob && /^[0-9a-f]{32}$/.test(previousBatchJob)) {
+  batchWatchJob(previousBatchJob);
+}
+
 batchSaveButton.addEventListener("click", async () => {
   if (batchSaving) return;
   const selected = batchItems.filter((item) => item.selected);
@@ -248,37 +297,33 @@ batchSaveButton.addEventListener("click", async () => {
   const format = document.querySelector("#batch-format").value;
   batchSaving = true;
   batchInput.disabled = true;
-  batchSaveButton.disabled = true;
-  let saved = 0;
+  batchUpdateSelection();
   try {
-    for (const item of selected) {
-      batchMessage(`Saving ${saved + 1} of ${selected.length}: ${item.file.name}…`);
-      const rules = item.frames.filter((frame) => frame.excluded)
-        .map((frame) => frame.number);
-      const body = new FormData();
-      body.append("sheets", item.file, item.file.name);
-      body.append("format", format);
-      body.append("duration_ms", String(item.duration));
-      body.append("cycles", "1");
-      body.append("skip_rules", JSON.stringify(rules.length ? {"1": rules} : {}));
-      body.append("project", project);
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: {Authorization: `Bearer ${deviceToken}`},
-        body
-      });
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(`${item.file.name}: ${response.status} ${message.slice(0, 160)}`);
-      }
-      await response.blob();
-      saved++;
+    const body = new FormData();
+    const settings = selected.map((item) => ({
+      format,
+      duration_ms: item.duration,
+      excluded: item.frames.filter((frame) => frame.excluded).map((frame) => frame.number)
+    }));
+    for (const item of selected) body.append("sheets", item.file, item.file.name);
+    body.append("settings", JSON.stringify(settings));
+    body.append("project", project);
+    batchMessage(`Uploading ${selected.length} sprite sheets to Cloud Tasks… Keep this tab open until accepted.`);
+    const response = await fetch(batchJobsURL, {
+      method: "POST",
+      headers: {Authorization: `Bearer ${deviceToken}`},
+      body
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Submission failed (${response.status}): ${message.slice(0, 200)}`);
     }
+    const job = await response.json();
     localStorage.setItem(LAST_PROJECT_KEY, project);
-    await refreshProjects();
-    batchMessage(`Saved ${saved} ${format.toUpperCase()} animations to GCS in ${project}.`);
+    batchMessage(`${job.total} animations queued. You may now close this tab or let your Mac sleep.`);
+    batchWatchJob(job.id);
   } catch (error) {
-    batchMessage(`Saved ${saved} of ${selected.length}. ${error.message}`);
+    batchMessage(error.message);
   } finally {
     batchSaving = false;
     batchInput.disabled = false;
