@@ -147,7 +147,7 @@ async function loadVisuals() {
   if (version !== visualLoadVersion) return;
 
   visualAssets = result.assets.filter((asset) =>
-    ["sprite", "gif", "mp4"].includes(asset.kind)
+    ["gif", "mp4"].includes(asset.kind)
   );
 
   const summary = document.createElement("p");
