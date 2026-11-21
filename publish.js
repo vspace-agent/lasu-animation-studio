@@ -59,7 +59,12 @@ async function loadAudio() {
   batches = result.batches;
   batchSelect.replaceChildren(new Option("Choose a batch", ""));
   for (const batch of batches) {
-    batchSelect.add(new Option(`${batch.id} · ${batch.tracks.length} tracks · ${batch.recording_count} recordings`, batch.id));
+    const theme = typeof batch.theme === "string" && batch.theme.trim()
+      ? batch.theme.trim().replaceAll("_", " ")
+      : "Untitled batch";
+    const shortId = batch.id.replace("studio_batch_", "").slice(0, 8);
+    const label = `${theme} · ${shortId} · ${batch.tracks.length} tracks · ${batch.recording_count} recordings`;
+    batchSelect.add(new Option(label, batch.id));
   }
   batchSelect.disabled = batches.length === 0;
   if (batches.length) {
