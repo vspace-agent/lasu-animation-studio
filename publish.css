@@ -1,0 +1,10 @@
+/* Present cloud production selections in the existing Lasu visual language. */
+.publish-items { display: grid; gap: .55rem; margin: 1rem 0; }
+.publish-track, .publish-asset { display: flex; align-items: start; gap: .7rem; padding: .7rem; border: 1px solid #d8dfdb; border-radius: .8rem; background: rgba(255, 255, 255, .65); overflow-wrap: anywhere; }
+.publish-track input, .publish-asset input { flex: 0 0 auto; margin-top: .2rem; }
+.publish-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .85rem; }
+.panel label:not(.publish-track):not(.publish-asset):not(.publish-check) { display: block; margin: .7rem 0; }
+.panel select, .panel input[type="text"], .panel input[type="number"], .panel textarea { display: block; width: 100%; margin: .4rem 0; padding: .7rem; border: 1px solid #bdcbc5; border-radius: .7rem; background: #fff; font: inherit; }
+.publish-check { display: flex; align-items: center; gap: .6rem; margin: .85rem 0; }
+#manifest-preview { max-height: 22rem; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; font-size: .75rem; }
+#publish-auth, #publish-status { min-height: 1.5rem; }

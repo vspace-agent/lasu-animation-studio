@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2f0e9">
+  <meta name="description" content="Compose Mushroom House audio and visual projects for YouTube publishing.">
+  <title>Lasu 🦩 · Publishing Studio</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./publish.css">
+  <script src="./publish.js" defer></script>
+</head>
+<body>
+  <div class="background" aria-hidden="true"></div>
+  <header class="site-header">
+    <span class="studio-label">Mushroom House 🍄 Studio</span>
+    <h1>Lasu <span aria-hidden="true">🦩</span></h1>
+    <p>🎬 Publishing Studio</p>
+  </header>
+  <main class="workspace">
+    <nav class="steps" aria-label="Studio navigation">
+      <a href="./index.html">← Animation</a>
+      <a href="./library.html">☁️ Library</a>
+      <a href="./publish.html" aria-current="page">🎬 Publish</a>
+    </nav>
+    <p id="publish-auth" role="status" aria-live="polite">Checking private device access…</p>
+
+    <section class="panel" aria-labelledby="audio-heading">
+      <h2 id="audio-heading">01 · Audio collection</h2>
+      <p>Choose recordings currently present in the audio cloud bucket.</p>
+      <label for="audio-batch">Audio batch</label>
+      <select id="audio-batch" disabled><option value="">Loading batches…</option></select>
+      <div id="audio-tracks" class="publish-items" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="visual-heading">
+      <h2 id="visual-heading">02 · Visual project</h2>
+      <label for="visual-project">Lasu cloud project</label>
+      <select id="visual-project" disabled><option value="">Choose a project…</option></select>
+      <div id="visual-assets" class="publish-items" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="composition-heading">
+      <h2 id="composition-heading">03 · Composition</h2>
+      <label class="publish-check"><input id="trim-boundaries" type="checkbox" checked> Trim boundary silence</label>
+      <div class="publish-fields">
+        <label>Within-track crossfade (seconds)
+          <input id="internal-fade" type="number" min="0.01" max="10" step="0.05" value="0.2">
+        </label>
+        <label>Between-track crossfade (seconds)
+          <input id="group-fade" type="number" min="0.01" max="10" step="0.1" value="1.5">
+        </label>
+        <label>Visual playback
+          <select id="visual-mode">
+            <option value="still">Still image</option>
+            <option value="loop">Loop animation</option>
+            <option value="fit">Fit video to audio</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="youtube-heading">
+      <h2 id="youtube-heading">04 · YouTube publication</h2>
+      <p>Destination: D_昧Mei · Playlist: For a good day</p>
+      <label>Video title <input id="video-title" type="text" maxlength="100" autocomplete="off"></label>
+      <label>Description <textarea id="video-description" rows="6"></textarea></label>
+      <label class="publish-check"><input id="publication-public" type="checkbox" checked> Publish publicly after verification</label>
+    </section>
+
+    <section class="panel" aria-labelledby="review-heading">
+      <h2 id="review-heading">05 · Review production manifest</h2>
+      <p>Review the selected source files before the cloud production workflow is connected.</p>
+      <button id="review-manifest" type="button" disabled>Review selection</button>
+      <p id="publish-status" role="status" aria-live="polite"></p>
+      <pre id="manifest-preview" aria-label="Production manifest preview"></pre>
+    </section>
+  </main>
+  <footer>Made in Mushroom House 🍄 Studio</footer>
+</body>
+</html>
