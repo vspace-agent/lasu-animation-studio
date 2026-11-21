@@ -8,3 +8,31 @@
 .publish-check { display: flex; align-items: center; gap: .6rem; margin: .85rem 0; }
 #manifest-preview { max-height: 22rem; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; font-size: .75rem; }
 #publish-auth, #publish-status { min-height: 1.5rem; }
+
+/* Group recordings by model and preserve each generation run as a distinct source. */
+.publish-model-group {
+  margin: .9rem 0;
+  padding: 1rem;
+  border: 1px solid #cbd9d2;
+  border-radius: 1rem;
+  background: rgba(234, 241, 235, .65);
+}
+.publish-model-group h3 {
+  margin: 0 0 .8rem;
+  color: #405b52;
+}
+.publish-generation-run {
+  margin: .7rem 0;
+  padding: .8rem;
+  border: 1px solid #d8dfdb;
+  border-radius: .8rem;
+  background: rgba(255, 255, 255, .58);
+}
+.publish-generation-run > p {
+  margin: 0 0 .55rem;
+  font-size: .8rem;
+  color: #58716a;
+}
+.publish-generation-run .publish-track {
+  margin-top: .4rem;
+}

@@ -30,26 +30,62 @@ async function getJSON(path) {
   return response.json();
 }
 
+function themeKey(batch) {
+  return batch.theme || `untitled:${batch.id}`;
+}
+
+function routeLabel(route) {
+  return { turbo: "Turbo", sft_lm: "SFT+LM" }[route] || "Unknown model";
+}
+
 function renderAudio() {
   audioContainer.replaceChildren();
-  const batch = batches.find((item) => item.id === batchSelect.value);
-  if (!batch) return;
+  const matching = batches.filter((batch) => themeKey(batch) === batchSelect.value);
+  if (!matching.length) {
+    reviewButton.disabled = true;
+    return;
+  }
+
+  const totalTracks = matching.reduce((sum, batch) => sum + batch.tracks.length, 0);
+  const totalRecordings = matching.reduce((sum, batch) => sum + batch.recording_count, 0);
   const summary = document.createElement("p");
-  summary.textContent = `${batch.tracks.length} tracks · ${batch.recording_count} available recordings`;
+  summary.textContent = `${matching.length} generation runs · ${totalTracks} tracks · ${totalRecordings} recordings`;
   audioContainer.append(summary);
 
-  for (const track of batch.tracks) {
-    const label = document.createElement("label");
-    label.className = "publish-track";
-    const check = document.createElement("input");
-    check.type = "checkbox";
-    check.className = "audio-track-selection";
-    check.value = track.name;
-    check.checked = true;
-    const description = document.createElement("span");
-    description.textContent = `${track.name.replace(/^track_\d+_/, "").replaceAll("_", " ")} · ${track.recordings.length} recording(s)`;
-    label.append(check, description);
-    audioContainer.append(label);
+  const routes = ["turbo", "sft_lm", ...new Set(matching.map((batch) => batch.route))];
+  for (const route of [...new Set(routes)]) {
+    const runs = matching.filter((batch) => batch.route === route);
+    if (!runs.length) continue;
+    const group = document.createElement("section");
+    group.className = "publish-model-group";
+    const heading = document.createElement("h3");
+    heading.textContent = `${routeLabel(route)} · ${runs.length} generation run(s)`;
+    group.append(heading);
+
+    for (const batch of runs) {
+      const run = document.createElement("div");
+      run.className = "publish-generation-run";
+      const runTitle = document.createElement("p");
+      runTitle.textContent = `Run ${batch.id.replace("studio_batch_", "").slice(0, 8)} · ${batch.recording_count} recordings`;
+      run.append(runTitle);
+
+      for (const track of batch.tracks) {
+        const label = document.createElement("label");
+        label.className = "publish-track";
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.className = "audio-track-selection";
+        check.dataset.batchId = batch.id;
+        check.dataset.trackName = track.name;
+        check.checked = true;
+        const description = document.createElement("span");
+        description.textContent = `${track.name.replace(/^track_\\d+_/, "").replaceAll("_", " ")} · ${track.recordings.length} recording(s)`;
+        label.append(check, description);
+        run.append(label);
+      }
+      group.append(run);
+    }
+    audioContainer.append(group);
   }
   reviewButton.disabled = false;
 }
@@ -57,18 +93,24 @@ function renderAudio() {
 async function loadAudio() {
   const result = await getJSON("/audio/batches");
   batches = result.batches;
-  batchSelect.replaceChildren(new Option("Choose a batch", ""));
+  batchSelect.replaceChildren(new Option("Choose a story theme", ""));
+  const themes = new Map();
   for (const batch of batches) {
-    const theme = typeof batch.theme === "string" && batch.theme.trim()
-      ? batch.theme.trim().replaceAll("_", " ")
-      : "Untitled batch";
-    const shortId = batch.id.replace("studio_batch_", "").slice(0, 8);
-    const label = `${theme} · ${shortId} · ${batch.tracks.length} tracks · ${batch.recording_count} recordings`;
-    batchSelect.add(new Option(label, batch.id));
+    const key = themeKey(batch);
+    if (!themes.has(key)) themes.set(key, []);
+    themes.get(key).push(batch);
   }
-  batchSelect.disabled = batches.length === 0;
-  if (batches.length) {
-    batchSelect.value = batches[batches.length - 1].id;
+  for (const [key, runs] of [...themes.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const name = runs[0].theme
+      ? runs[0].theme.replaceAll("_", " ")
+      : `Untitled batch · ${runs[0].id.replace("studio_batch_", "").slice(0, 8)}`;
+    const count = runs.reduce((sum, batch) => sum + batch.recording_count, 0);
+    batchSelect.add(new Option(`${name} · ${runs.length} runs · ${count} recordings`, key));
+  }
+  batchSelect.disabled = themes.size === 0;
+  if (themes.size) {
+    const last = batches[batches.length - 1];
+    batchSelect.value = themeKey(last);
     renderAudio();
   } else {
     audioContainer.textContent = "No audio recordings are currently present in cloud storage.";
@@ -122,17 +164,24 @@ async function loadProjects() {
 }
 
 function previewManifest() {
-  const batch = batches.find((item) => item.id === batchSelect.value);
-  if (!batch) throw new Error("Choose an available audio batch.");
-  const selectedTracks = new Set(
-    [...audioContainer.querySelectorAll(".audio-track-selection:checked")].map((input) => input.value)
+  const selected = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
+  const selectedKeys = new Set(
+    selected.map((input) => `${input.dataset.batchId}/${input.dataset.trackName}`)
   );
-  const tracks = batch.tracks
-    .filter((track) => selectedTracks.has(track.name))
-    .map((track) => ({
-      name: track.name,
-      recordings: track.recordings.map((recording) => recording.path),
-    }));
+  const selectedBatches = batches
+    .filter((batch) => themeKey(batch) === batchSelect.value)
+    .map((batch) => ({
+      id: batch.id,
+      route: batch.route,
+      tracks: batch.tracks
+        .filter((track) => selectedKeys.has(`${batch.id}/${track.name}`))
+        .map((track) => ({
+          name: track.name,
+          recordings: track.recordings.map((recording) => recording.path),
+        })),
+    }))
+    .filter((batch) => batch.tracks.length);
+  const tracks = selectedBatches.flatMap((batch) => batch.tracks);
   if (!tracks.length) throw new Error("Select at least one audio track.");
   const chosenVisual = visualContainer.querySelector('input[name="publish-visual"]:checked');
   if (!chosenVisual) throw new Error("Select a visual asset.");
@@ -147,8 +196,12 @@ function previewManifest() {
   if (!title || title.length > 100) throw new Error("Enter a YouTube title (up to 100 characters).");
 
   return {
-    schema_version: 1,
-    audio: { bucket: "mushroom-house-studio-audio-staging", batch: batch.id, tracks },
+    schema_version: 2,
+    audio: {
+      bucket: "mushroom-house-studio-audio-staging",
+      theme: batches.find((batch) => themeKey(batch) === batchSelect.value)?.theme || null,
+      batches: selectedBatches,
+    },
     visual: {
       bucket: "mushroom-house-visual-assets",
       project: projectSelect.value,
