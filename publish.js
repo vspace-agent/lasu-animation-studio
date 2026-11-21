@@ -117,35 +117,113 @@ async function loadAudio() {
   }
 }
 
-function renderVisuals() {
+// Display private visual objects using the Cloud Library's authenticated preview method.
+let visualPreviewUrls = [];
+let visualLoadVersion = 0;
+
+function clearVisualPreviews() {
+  visualLoadVersion += 1;
+  for (const url of visualPreviewUrls) URL.revokeObjectURL(url);
+  visualPreviewUrls = [];
   visualContainer.replaceChildren();
+}
+
+function visualAssetParams(asset, project) {
+  const name = asset.path.split("/").pop();
+  const match = /^([0-9a-f]{64})\.(png|jpg|gif|mp4)$/.exec(name);
+  if (!match) throw new Error("Invalid stored visual asset name.");
+  return new URLSearchParams({
+    project, kind: asset.kind, digest: match[1], extension: match[2]
+  });
+}
+
+async function loadVisuals() {
+  clearVisualPreviews();
+  visualAssets = [];
+  const project = projectSelect.value;
+  if (!project) return;
+  const version = visualLoadVersion;
+  const result = await getJSON(`/assets?${new URLSearchParams({ project })}`);
+  if (version !== visualLoadVersion) return;
+
+  visualAssets = result.assets.filter((asset) =>
+    ["sprite", "gif", "mp4"].includes(asset.kind)
+  );
+
   const summary = document.createElement("p");
-  summary.textContent = `${visualAssets.length} available visual assets`;
+  summary.textContent = `${visualAssets.length} available visual assets · choose one`;
   visualContainer.append(summary);
+
+  const grid = document.createElement("div");
+  grid.className = "library-grid publish-visual-grid";
+  visualContainer.append(grid);
+
   for (const asset of visualAssets) {
-    const label = document.createElement("label");
-    label.className = "publish-asset";
+    const card = document.createElement("label");
+    card.className = "library-card publish-visual-card";
+    card.dataset.path = asset.path;
+
     const radio = document.createElement("input");
     radio.type = "radio";
     radio.name = "publish-visual";
     radio.value = asset.path;
-    const description = document.createElement("span");
-    description.textContent = `${asset.kind.toUpperCase()} · ${asset.path.split("/").pop()}`;
-    label.append(radio, description);
-    visualContainer.append(label);
-  }
-  const first = visualContainer.querySelector('input[name="publish-visual"]');
-  if (first) first.checked = true;
-}
+    radio.setAttribute("aria-label", `Select ${asset.kind} ${asset.path.split("/").pop()}`);
+    radio.addEventListener("change", () => {
+      for (const item of grid.querySelectorAll(".library-card")) {
+        item.classList.toggle("selected", item.querySelector("input").checked);
+      }
+    });
+    card.append(radio);
 
-async function loadVisuals() {
-  visualAssets = [];
-  visualContainer.replaceChildren();
-  if (!projectSelect.value) return;
-  const query = new URLSearchParams({ project: projectSelect.value });
-  const result = await getJSON(`/assets?${query}`);
-  visualAssets = result.assets.filter((asset) => ["sprite", "gif", "mp4"].includes(asset.kind));
-  renderVisuals();
+    const media = document.createElement(asset.kind === "mp4" ? "video" : "img");
+    if (asset.kind === "mp4") {
+      media.muted = true;
+      media.loop = true;
+      media.playsInline = true;
+      media.controls = true;
+      media.preload = "metadata";
+    } else {
+      media.alt = `${asset.kind} preview`;
+      media.loading = "lazy";
+    }
+    card.append(media);
+
+    const caption = document.createElement("span");
+    caption.className = "caption";
+    caption.textContent = `${asset.kind.toUpperCase()} · ${asset.path.split("/").pop().slice(0, 12)}… · ${(asset.size / 1024).toFixed(0)} KB`;
+    card.append(caption);
+    grid.append(card);
+  }
+
+  const first = grid.querySelector('input[name="publish-visual"]');
+  if (first) {
+    first.checked = true;
+    first.closest(".library-card").classList.add("selected");
+  }
+
+  // Like Cloud Library, load each private preview with the paired device token.
+  for (const asset of visualAssets) {
+    if (version !== visualLoadVersion) return;
+    const card = Array.from(grid.children).find(
+      (item) => item.dataset.path === asset.path
+    );
+    if (!card) continue;
+    try {
+      const response = await fetch(
+        `${API}/assets/file?${visualAssetParams(asset, project)}`,
+        { headers: headers() }
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      if (version !== visualLoadVersion) return;
+      const url = URL.createObjectURL(blob);
+      visualPreviewUrls.push(url);
+      card.querySelector("img,video").src = url;
+    } catch (_) {
+      if (version !== visualLoadVersion) return;
+      card.querySelector(".caption").textContent += " · Preview unavailable";
+    }
+  }
 }
 
 async function loadProjects() {

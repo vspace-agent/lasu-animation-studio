@@ -36,3 +36,10 @@
 .publish-generation-run .publish-track {
   margin-top: .4rem;
 }
+
+/* Reuse Cloud Library thumbnails with radio-button selection for publishing. */
+.publish-visual-grid { width: 100%; }
+.publish-visual-card { min-width: 0; }
+.publish-visual-card input[type="radio"] { margin: 0; }
+.publish-visual-card video { cursor: auto; }
+.publish-visual-card .caption { line-height: 1.35; }
