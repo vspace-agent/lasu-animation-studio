@@ -12,6 +12,7 @@ const reviewButton = $("#review-manifest");
 const status = $("#publish-status");
 let batches = [];
 let visualAssets = [];
+let selectedGifPaths = [];
 
 function headers() {
   return { Authorization: `Bearer ${token}` };
@@ -137,21 +138,87 @@ function visualAssetParams(asset, project) {
   });
 }
 
+function renderGifOrder() {
+  const list = $("#visual-order");
+  list.replaceChildren();
+  $("#visual-order-count").textContent =
+    `${selectedGifPaths.length} GIF(s) selected · playback order`;
+
+  for (const [index, path] of selectedGifPaths.entries()) {
+    const item = document.createElement("li");
+    item.className = "publish-ordered-gif";
+    const number = document.createElement("strong");
+    number.className = "publish-order-number";
+    number.textContent = String(index + 1);
+    const name = document.createElement("span");
+    name.className = "publish-order-label";
+    name.textContent = `${path.split("/").pop().slice(0, 12)}…`;
+    name.title = path;
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.textContent = "↑";
+    up.setAttribute("aria-label", `Move GIF ${index + 1} earlier`);
+    up.disabled = index === 0;
+    up.addEventListener("click", () => moveGif(index, index - 1));
+
+    const down = document.createElement("button");
+    down.type = "button";
+    down.textContent = "↓";
+    down.setAttribute("aria-label", `Move GIF ${index + 1} later`);
+    down.disabled = index === selectedGifPaths.length - 1;
+    down.addEventListener("click", () => moveGif(index, index + 1));
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", `Remove GIF ${index + 1}`);
+    remove.addEventListener("click", () => {
+      selectedGifPaths.splice(index, 1);
+      updateGifSelection();
+    });
+    item.append(number, name, up, down, remove);
+    list.append(item);
+  }
+}
+
+function moveGif(from, to) {
+  if (to < 0 || to >= selectedGifPaths.length) return;
+  const [path] = selectedGifPaths.splice(from, 1);
+  selectedGifPaths.splice(to, 0, path);
+  updateGifSelection();
+}
+
+function updateGifSelection() {
+  for (const card of visualContainer.querySelectorAll(".publish-visual-card")) {
+    const index = selectedGifPaths.indexOf(card.dataset.path);
+    const chosen = index >= 0;
+    card.classList.toggle("selected", chosen);
+    card.querySelector('input[type="checkbox"]').checked = chosen;
+    card.querySelector(".publish-card-order").textContent =
+      chosen ? String(index + 1) : "";
+  }
+  renderGifOrder();
+  $("#save-gif-selection").disabled = selectedGifPaths.length === 0;
+}
+
 async function loadVisuals() {
   clearVisualPreviews();
   visualAssets = [];
+  selectedGifPaths = [];
+  updateGifSelection();
   const project = projectSelect.value;
   if (!project) return;
   const version = visualLoadVersion;
   const result = await getJSON(`/assets?${new URLSearchParams({ project })}`);
   if (version !== visualLoadVersion) return;
 
-  visualAssets = result.assets.filter((asset) =>
-    ["gif", "mp4"].includes(asset.kind)
-  );
+  // The first GIF composer accepts GIFs, not spritesheets or MP4s.
+  visualAssets = result.assets.filter((asset) => asset.kind === "gif");
 
   const summary = document.createElement("p");
-  summary.textContent = `${visualAssets.length} available visual assets · choose one`;
+  summary.textContent =
+    `${visualAssets.length} GIF(s) available · select in playback order`;
   visualContainer.append(summary);
 
   const grid = document.createElement("div");
@@ -163,45 +230,39 @@ async function loadVisuals() {
     card.className = "library-card publish-visual-card";
     card.dataset.path = asset.path;
 
-    const radio = document.createElement("input");
-    radio.type = "radio";
-    radio.name = "publish-visual";
-    radio.value = asset.path;
-    radio.setAttribute("aria-label", `Select ${asset.kind} ${asset.path.split("/").pop()}`);
-    radio.addEventListener("change", () => {
-      for (const item of grid.querySelectorAll(".library-card")) {
-        item.classList.toggle("selected", item.querySelector("input").checked);
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.setAttribute(
+      "aria-label", `Select GIF ${asset.path.split("/").pop()}`
+    );
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked && !selectedGifPaths.includes(asset.path)) {
+        selectedGifPaths.push(asset.path);
+      } else if (!checkbox.checked) {
+        selectedGifPaths = selectedGifPaths.filter((path) => path !== asset.path);
       }
+      updateGifSelection();
     });
-    card.append(radio);
+    card.append(checkbox);
 
-    const media = document.createElement(asset.kind === "mp4" ? "video" : "img");
-    if (asset.kind === "mp4") {
-      media.muted = true;
-      media.loop = true;
-      media.playsInline = true;
-      media.controls = true;
-      media.preload = "metadata";
-    } else {
-      media.alt = `${asset.kind} preview`;
-      media.loading = "lazy";
-    }
+    const badge = document.createElement("span");
+    badge.className = "publish-card-order";
+    badge.setAttribute("aria-hidden", "true");
+    card.append(badge);
+
+    const media = document.createElement("img");
+    media.alt = "Animated GIF preview";
+    media.loading = "lazy";
     card.append(media);
 
     const caption = document.createElement("span");
     caption.className = "caption";
-    caption.textContent = `${asset.kind.toUpperCase()} · ${asset.path.split("/").pop().slice(0, 12)}… · ${(asset.size / 1024).toFixed(0)} KB`;
+    caption.textContent = `GIF · ${asset.path.split("/").pop().slice(0, 12)}… · ${(asset.size / 1024).toFixed(0)} KB`;
     card.append(caption);
     grid.append(card);
   }
 
-  const first = grid.querySelector('input[name="publish-visual"]');
-  if (first) {
-    first.checked = true;
-    first.closest(".library-card").classList.add("selected");
-  }
-
-  // Like Cloud Library, load each private preview with the paired device token.
+  // Reuse Cloud Library's authenticated private media loading.
   for (const asset of visualAssets) {
     if (version !== visualLoadVersion) return;
     const card = Array.from(grid.children).find(
@@ -218,7 +279,7 @@ async function loadVisuals() {
       if (version !== visualLoadVersion) return;
       const url = URL.createObjectURL(blob);
       visualPreviewUrls.push(url);
-      card.querySelector("img,video").src = url;
+      card.querySelector("img").src = url;
     } catch (_) {
       if (version !== visualLoadVersion) return;
       card.querySelector(".caption").textContent += " · Preview unavailable";
@@ -261,10 +322,10 @@ function previewManifest() {
     .filter((batch) => batch.tracks.length);
   const tracks = selectedBatches.flatMap((batch) => batch.tracks);
   if (!tracks.length) throw new Error("Select at least one audio track.");
-  const chosenVisual = visualContainer.querySelector('input[name="publish-visual"]:checked');
-  if (!chosenVisual) throw new Error("Select a visual asset.");
-  const asset = visualAssets.find((item) => item.path === chosenVisual.value);
-  if (!asset) throw new Error("Selected visual asset is no longer listed.");
+  if (!selectedGifPaths.length) throw new Error("Select at least one GIF.");
+  if (selectedGifPaths.some((path) =>
+    !visualAssets.some((asset) => asset.kind === "gif" && asset.path === path)
+  )) throw new Error("The GIF selection no longer matches this project.");
   const internalFade = Number($("#internal-fade").value);
   const groupFade = Number($("#group-fade").value);
   if (![internalFade, groupFade].every((value) => Number.isFinite(value) && value > 0 && value <= 10)) {
@@ -283,9 +344,9 @@ function previewManifest() {
     visual: {
       bucket: "mushroom-house-visual-assets",
       project: projectSelect.value,
-      path: asset.path,
-      kind: asset.kind,
-      playback: $("#visual-mode").value,
+      kind: "gif",
+      gif_paths: [...selectedGifPaths],
+      playback: "loop_per_track",
     },
     composition: {
       trim_boundaries: $("#trim-boundaries").checked,
@@ -301,6 +362,49 @@ function previewManifest() {
     },
   };
 }
+
+$("#save-gif-selection").addEventListener("click", async () => {
+  const button = $("#save-gif-selection");
+  const feedback = $("#gif-save-status");
+  const project = projectSelect.value;
+  const gifPaths = [...selectedGifPaths];
+  if (!project || !gifPaths.length) {
+    feedback.textContent = "Select at least one GIF before saving.";
+    return;
+  }
+  button.disabled = true;
+  feedback.textContent = "Saving ordered selection to private cloud log…";
+  try {
+    const response = await fetch(`${API}/publishing/selections`, {
+      method: "POST",
+      headers: { ...headers(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project,
+        gif_paths: gifPaths,
+        audio_theme: batches.find((batch) =>
+          themeKey(batch) === batchSelect.value)?.theme || null,
+        audio_model: null
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `Save failed (${response.status}).`);
+    }
+    const saved = await response.json();
+    if (saved.project !== project ||
+        JSON.stringify(saved.gif_paths) !== JSON.stringify(gifPaths) ||
+        !/^[0-9a-f]{32}$/.test(saved.selection_id)) {
+      throw new Error("Saved selection response did not match the requested order.");
+    }
+    feedback.textContent =
+      `Saved ${gifPaths.length} GIF(s) in order · Log ID: ${saved.selection_id}`;
+    console.info("Lasu publishing selection log:", saved.selection_id);
+  } catch (error) {
+    feedback.textContent = error.message;
+  } finally {
+    button.disabled = selectedGifPaths.length === 0;
+  }
+});
 
 batchSelect.addEventListener("change", renderAudio);
 projectSelect.addEventListener("change", async () => {
