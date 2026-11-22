@@ -8,8 +8,8 @@
   <title>Lasu 🦩 · Publishing Studio</title>
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./library.css?v=0bbbae1">
-  <link rel="stylesheet" href="./publish.css?v=audio-model-controls-01">
-  <script src="./publish.js?v=audio-model-controls-01" defer></script>
+  <link rel="stylesheet" href="./publish.css?v=collapsible-description-01">
+  <script src="./publish.js?v=collapsible-description-01" defer></script>
 </head>
 <body>
   <div class="background" aria-hidden="true"></div>
@@ -62,7 +62,11 @@
       <h2 id="youtube-heading">04 · YouTube publication</h2>
       <p>Destination: D_昧Mei · Playlist: For a good day</p>
       <label>Video title <input id="video-title" type="text" maxlength="100" autocomplete="off"></label>
-      <label>Description <textarea id="video-description" rows="6"></textarea></label>
+      <label>Description · generated from selected batch data
+        <textarea id="video-description" rows="9" aria-describedby="description-note"></textarea>
+      </label>
+      <p id="description-note">Automatically composed from the selected recordings. You can edit this draft; regenerate to replace your edits.</p>
+      <button id="regenerate-description" type="button">Regenerate description</button>
       <label class="publish-check"><input id="publication-public" type="checkbox" checked> Publish publicly after verification</label>
     </section>
 

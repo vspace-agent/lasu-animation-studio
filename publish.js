@@ -39,6 +39,53 @@ function routeLabel(route) {
   return { turbo: "Turbo", sft_lm: "SFT+LM" }[route] || "Unknown model";
 }
 
+// Compose publication copy only from metadata returned by the audio discovery API.
+function generatePublicationDescription() {
+  const chosen = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
+  const keys = new Set(chosen.map((input) => `${input.dataset.batchId}/${input.dataset.trackName}`));
+  const matching = batches.filter((batch) => themeKey(batch) === batchSelect.value);
+  const selectedRuns = matching.map((batch) => ({
+    ...batch,
+    tracks: batch.tracks.filter((track) => keys.has(`${batch.id}/${track.name}`)),
+  })).filter((batch) => batch.tracks.length);
+  if (!selectedRuns.length) return "";
+
+  const theme = selectedRuns[0].theme?.replaceAll("_", " ") || "Untitled music collection";
+  const names = [...new Set(selectedRuns.flatMap((batch) =>
+    batch.tracks.map((track) => track.name)
+  ))].sort((a, b) => {
+    const number = (name) => Number(name.match(/^track_(\d+)_/)?.[1] || 0);
+    return number(a) - number(b) || a.localeCompare(b);
+  }).map((name) => name.replace(/^track_\d+_/, "").replaceAll("_", " "));
+  const recordings = selectedRuns.reduce((sum, batch) =>
+    sum + batch.tracks.reduce((total, track) => total + track.recordings.length, 0), 0);
+  const models = [...new Set(selectedRuns.map((batch) => routeLabel(batch.route)))];
+  const lines = [
+    "Mushroom House 🍄 Studio — MusicLab",
+    "",
+    `Music collection: ${theme}`,
+    `Original recordings: ${recordings} across ${names.length} selected track themes.`,
+    `Generation model${models.length === 1 ? "" : "s"}: ${models.join(", ")}`,
+    "",
+    "Musical themes:",
+    ...names.map((name, index) => `${String(index + 1).padStart(2, "0")}. ${name}`),
+  ];
+  if (selectedGifPaths.length) {
+    lines.push("", `Visuals: ${selectedGifPaths.length} selected Mushroom House animations.`);
+  }
+  return lines.join("\n");
+}
+
+let descriptionEdited = false;
+function refreshPublicationDescription(force = false) {
+  if (descriptionEdited && !force) return;
+  $("#video-description").value = generatePublicationDescription();
+  descriptionEdited = false;
+}
+
+$("#video-description").addEventListener("input", () => { descriptionEdited = true; });
+$("#regenerate-description").addEventListener("click", () => refreshPublicationDescription(true));
+
 function renderAudio() {
   audioContainer.replaceChildren();
   const matching = batches.filter((batch) => themeKey(batch) === batchSelect.value);
@@ -57,10 +104,11 @@ function renderAudio() {
   for (const route of [...new Set(routes)]) {
     const runs = matching.filter((batch) => batch.route === route);
     if (!runs.length) continue;
-    const group = document.createElement("section");
+    const group = document.createElement("details");
     group.className = "publish-model-group";
-    const heading = document.createElement("h3");
-    heading.textContent = `${routeLabel(route)} · ${runs.length} generation run(s)`;
+    const heading = document.createElement("summary");
+    const modelRecordings = runs.reduce((sum, batch) => sum + batch.recording_count, 0);
+    heading.textContent = `${routeLabel(route)} · ${runs.length} runs · ${modelRecordings} recordings`;
     group.append(heading);
 
     const controls = document.createElement("div");
@@ -74,6 +122,7 @@ function renderAudio() {
           input.checked = checked && !input.dataset.trackName.startsWith("track_01_");
         }
         $("#manifest-preview").textContent = "";
+        refreshPublicationDescription();
         setStatus("Audio selection changed. Review the manifest again.");
       });
       controls.append(button);
@@ -81,9 +130,9 @@ function renderAudio() {
     group.append(controls);
 
     for (const batch of runs) {
-      const run = document.createElement("div");
+      const run = document.createElement("details");
       run.className = "publish-generation-run";
-      const runTitle = document.createElement("p");
+      const runTitle = document.createElement("summary");
       runTitle.textContent = `Run ${batch.id.replace("studio_batch_", "").slice(0, 8)} · ${batch.recording_count} recordings`;
       run.append(runTitle);
 
@@ -99,6 +148,10 @@ function renderAudio() {
         const description = document.createElement("span");
         description.textContent = `${track.name.replace(/^track_\\d+_/, "").replaceAll("_", " ")} · ${track.recordings.length} recording(s)`;
         label.append(check, description);
+        check.addEventListener("change", () => {
+          $("#manifest-preview").textContent = "";
+          refreshPublicationDescription();
+        });
         run.append(label);
       }
       group.append(run);
@@ -106,6 +159,7 @@ function renderAudio() {
     audioContainer.append(group);
   }
   reviewButton.disabled = false;
+  refreshPublicationDescription();
 }
 
 async function loadAudio() {
@@ -423,7 +477,10 @@ $("#save-gif-selection").addEventListener("click", async () => {
   }
 });
 
-batchSelect.addEventListener("change", renderAudio);
+batchSelect.addEventListener("change", () => {
+  descriptionEdited = false;
+  renderAudio();
+});
 projectSelect.addEventListener("change", async () => {
   localStorage.setItem("lasu-last-project", projectSelect.value);
   try {
@@ -450,6 +507,7 @@ async function initialize() {
   }
   try {
     await Promise.all([loadAudio(), loadProjects()]);
+    refreshPublicationDescription();
     $("#publish-auth").textContent = "Private cloud access enabled.";
     setStatus("Choose the recordings and visual, then review the production manifest.");
   } catch (error) {

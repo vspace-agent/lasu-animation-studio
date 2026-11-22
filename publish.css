@@ -73,3 +73,15 @@
 /* Select or clear musical recordings within one generation model. */
 .publish-model-controls { display: flex; flex-wrap: wrap; gap: .5rem; margin: .45rem 0 .9rem; }
 .publish-model-controls button { padding: .4rem .75rem; font: inherit; cursor: pointer; }
+
+/* Keep model and generation-run selections collapsed until requested. */
+.publish-model-group > summary,
+.publish-generation-run > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #405b52;
+}
+.publish-model-group > summary { padding: .15rem 0; }
+.publish-generation-run > summary { font-size: .85rem; }
+.publish-model-group:not([open]),
+.publish-generation-run:not([open]) { padding-bottom: .8rem; }
