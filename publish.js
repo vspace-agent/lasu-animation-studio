@@ -39,63 +39,70 @@ function routeLabel(route) {
   return { turbo: "Turbo", sft_lm: "SFT+LM" }[route] || "Unknown model";
 }
 
-// Compose publication copy only from metadata returned by the audio discovery API.
-// Preserve approved story copy; other themes use only verified metadata.
-const PUBLICATION_STORY_COPY = Object.freeze({
-  midnight_butter_bread_at_mushroom_house: "A quiet November night inside the invisible Mushroom House: a little girl and her ancient horse wait beside the stone oven while their butter bread slowly rises and bakes.",
-});
-
+// Build audience-facing copy from the original story and music prompts; never invent chapter times.
 function generatePublicationDescription() {
   const chosen = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
   const keys = new Set(chosen.map((input) => `${input.dataset.batchId}/${input.dataset.trackName}`));
-  const matching = batches.filter((batch) => themeKey(batch) === batchSelect.value);
-  const selectedRuns = matching.map((batch) => ({
-    ...batch,
-    tracks: batch.tracks.filter((track) => keys.has(`${batch.id}/${track.name}`)),
-  })).filter((batch) => batch.tracks.length);
+  const selectedRuns = batches.filter((batch) => themeKey(batch) === batchSelect.value)
+    .map((batch) => ({
+      ...batch,
+      tracks: batch.tracks.filter((track) => keys.has(`${batch.id}/${track.name}`)),
+    })).filter((batch) => batch.tracks.length);
   if (!selectedRuns.length) return "";
 
-  const themeKeyValue = selectedRuns[0].theme || "";
-  const theme = themeKeyValue.replaceAll("_", " ") || "Untitled music collection";
-  const names = [...new Set(selectedRuns.flatMap((batch) =>
-    batch.tracks.map((track) => track.name)
-  ))].sort((a, b) => {
-    const number = (name) => Number(name.match(/^track_(\d+)_/)?.[1] || 0);
-    return number(a) - number(b) || a.localeCompare(b);
-  }).map((name) => name.replace(/^track_\d+_/, "").replaceAll("_", " "));
-
-  const recordings = selectedRuns.reduce((sum, batch) =>
-    sum + batch.tracks.reduce((total, track) => total + track.recordings.length, 0), 0);
-  const models = [...new Set(selectedRuns.map((batch) => routeLabel(batch.route)))];
-  const story = PUBLICATION_STORY_COPY[themeKeyValue] || `Original music inspired by ${theme}.`;
-  const count = selectedGifPaths.length;
-  const gifWord = count === 1 ? "animation" : "animations";
+  const story = selectedRuns.map((batch) => batch.story?.trim()).find(Boolean);
+  const descriptions = selectedRuns.flatMap((batch) =>
+    batch.tracks.map((track) => batch.music_prompts?.[track.name]?.trim()).filter(Boolean)
+  );
+  // Use only the shared instrumental palette; individual prompts are production data.
+  const palette = descriptions.map((prompt) =>
+    prompt.split(/\.\s+/)[1]?.trim()
+  ).filter(Boolean);
+  const sharedPalette = palette.length && palette.every((item) => item === palette[0])
+    ? palette[0].replace(/[.\s]+$/, "")
+    : "";
+  const musicDescription = sharedPalette
+    ? `Instrumental music featuring ${sharedPalette.charAt(0).toLowerCase()}${sharedPalette.slice(1)}.`
+    : "";
 
   const lines = [
-    "Mushroom House 🍄 Studio — MusicLab",
+    "For a good day | Story-Based Background Music",
+    "Mood Regulation • Long Listening",
     "",
-    story,
-    "",
-    "Original gentle instrumental music for relaxing, reading, working, baking, and peaceful evenings.",
-    "",
-    `Music: Mushroom House MusicLab · ACE-Step ${models.join(" + ")}`,
-    `Audio: ${recordings} original recordings across ${names.length} musical themes, assembled with trimmed boundary silence and gentle transitions.`,
-    `Animation: ${count} original Mushroom House ${gifWord} selected for the video.`,
-    "",
-    "Musical themes:",
-    ...names.map((name, index) => `${String(index + 1).padStart(2, "0")}. ${name}`),
-    "",
-    "Chapter timestamps will be added after audio composition.",
+    ...(story ? [story, ""] : []),
+    ...(musicDescription ? [musicDescription, ""] : []),
+    "Base model generation + sound programming by Mushroom House Studio.",
     "",
     "Made at Mushroom House 🍄 Studio.",
   ];
   return lines.join("\n");
 }
 
+function publicationSourceWarnings() {
+  const chosen = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
+  const keys = new Set(chosen.map((input) => `${input.dataset.batchId}/${input.dataset.trackName}`));
+  const runs = batches.filter((batch) => themeKey(batch) === batchSelect.value)
+    .filter((batch) => batch.tracks.some((track) =>
+      keys.has(`${batch.id}/${track.name}`)));
+  const missing = [];
+  if (runs.length && !runs.some((batch) => batch.story?.trim())) {
+    missing.push("Original batch story unavailable from the audio API.");
+  }
+  if (runs.length && !runs.some((batch) => batch.tracks.some((track) =>
+      keys.has(`${batch.id}/${track.name}`) && batch.music_prompts?.[track.name]?.trim()))) {
+    missing.push("Original music prompts unavailable from the audio API.");
+  }
+  return missing;
+}
+
 let descriptionEdited = false;
 function refreshPublicationDescription(force = false) {
   if (descriptionEdited && !force) return;
   $("#video-description").value = generatePublicationDescription();
+  const warnings = publicationSourceWarnings();
+  $("#description-note").textContent = warnings.length
+    ? `Missing source data: ${warnings.join(" ")} Edit the draft before publication.`
+    : "Draft uses original batch story and music prompts. Edit before publication; verified chapter timestamps are added after composition.";
   descriptionEdited = false;
 }
 
