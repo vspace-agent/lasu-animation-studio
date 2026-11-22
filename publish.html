@@ -8,8 +8,8 @@
   <title>Lasu 🦩 · Publishing Studio</title>
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./library.css?v=0bbbae1">
-  <link rel="stylesheet" href="./publish.css?v=collapsible-description-01">
-  <script src="./publish.js?v=collapsible-description-01" defer></script>
+  <link rel="stylesheet" href="./publish.css?v=turbo-long-listen-01">
+  <script src="./publish.js?v=turbo-long-listen-01" defer></script>
 </head>
 <body>
   <div class="background" aria-hidden="true"></div>
@@ -31,6 +31,11 @@
       <p>Choose recordings currently present in the audio cloud bucket.</p>
       <label for="audio-batch">Story theme</label>
       <select id="audio-batch" disabled><option value="">Loading batches…</option></select>
+      <label for="publishing-preset">Automation</label>
+      <select id="publishing-preset">
+        <option value="turbo_long_listen">Turbo long listen</option>
+        <option value="manual">Manual selection</option>
+      </select>
       <div id="audio-tracks" class="publish-items" aria-live="polite"></div>
     </section>
 

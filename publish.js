@@ -40,6 +40,11 @@ function routeLabel(route) {
 }
 
 // Compose publication copy only from metadata returned by the audio discovery API.
+// Preserve approved story copy; other themes use only verified metadata.
+const PUBLICATION_STORY_COPY = Object.freeze({
+  midnight_butter_bread_at_mushroom_house: "A quiet November night inside the invisible Mushroom House: a little girl and her ancient horse wait beside the stone oven while their butter bread slowly rises and bakes.",
+});
+
 function generatePublicationDescription() {
   const chosen = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
   const keys = new Set(chosen.map((input) => `${input.dataset.batchId}/${input.dataset.trackName}`));
@@ -50,29 +55,40 @@ function generatePublicationDescription() {
   })).filter((batch) => batch.tracks.length);
   if (!selectedRuns.length) return "";
 
-  const theme = selectedRuns[0].theme?.replaceAll("_", " ") || "Untitled music collection";
+  const themeKeyValue = selectedRuns[0].theme || "";
+  const theme = themeKeyValue.replaceAll("_", " ") || "Untitled music collection";
   const names = [...new Set(selectedRuns.flatMap((batch) =>
     batch.tracks.map((track) => track.name)
   ))].sort((a, b) => {
     const number = (name) => Number(name.match(/^track_(\d+)_/)?.[1] || 0);
     return number(a) - number(b) || a.localeCompare(b);
   }).map((name) => name.replace(/^track_\d+_/, "").replaceAll("_", " "));
+
   const recordings = selectedRuns.reduce((sum, batch) =>
     sum + batch.tracks.reduce((total, track) => total + track.recordings.length, 0), 0);
   const models = [...new Set(selectedRuns.map((batch) => routeLabel(batch.route)))];
+  const story = PUBLICATION_STORY_COPY[themeKeyValue] || `Original music inspired by ${theme}.`;
+  const count = selectedGifPaths.length;
+  const gifWord = count === 1 ? "animation" : "animations";
+
   const lines = [
     "Mushroom House 🍄 Studio — MusicLab",
     "",
-    `Music collection: ${theme}`,
-    `Original recordings: ${recordings} across ${names.length} selected track themes.`,
-    `Generation model${models.length === 1 ? "" : "s"}: ${models.join(", ")}`,
+    story,
+    "",
+    "Original gentle instrumental music for relaxing, reading, working, baking, and peaceful evenings.",
+    "",
+    `Music: Mushroom House MusicLab · ACE-Step ${models.join(" + ")}`,
+    `Audio: ${recordings} original recordings across ${names.length} musical themes, assembled with trimmed boundary silence and gentle transitions.`,
+    `Animation: ${count} original Mushroom House ${gifWord} selected for the video.`,
     "",
     "Musical themes:",
     ...names.map((name, index) => `${String(index + 1).padStart(2, "0")}. ${name}`),
+    "",
+    "Chapter timestamps will be added after audio composition.",
+    "",
+    "Made at Mushroom House 🍄 Studio.",
   ];
-  if (selectedGifPaths.length) {
-    lines.push("", `Visuals: ${selectedGifPaths.length} selected Mushroom House animations.`);
-  }
   return lines.join("\n");
 }
 
@@ -121,6 +137,7 @@ function renderAudio() {
         for (const input of group.querySelectorAll(".audio-track-selection")) {
           input.checked = checked && !input.dataset.trackName.startsWith("track_01_");
         }
+        $("#publishing-preset").value = "manual";
         $("#manifest-preview").textContent = "";
         refreshPublicationDescription();
         setStatus("Audio selection changed. Review the manifest again.");
@@ -144,11 +161,14 @@ function renderAudio() {
         check.className = "audio-track-selection";
         check.dataset.batchId = batch.id;
         check.dataset.trackName = track.name;
-        check.checked = !track.name.startsWith("track_01_");
+        check.checked = $("#publishing-preset").value === "turbo_long_listen"
+          ? batch.route === "turbo" && !/^track_01_/.test(track.name)
+          : false;
         const description = document.createElement("span");
         description.textContent = `${track.name.replace(/^track_\\d+_/, "").replaceAll("_", " ")} · ${track.recordings.length} recording(s)`;
         label.append(check, description);
         check.addEventListener("change", () => {
+          $("#publishing-preset").value = "manual";
           $("#manifest-preview").textContent = "";
           refreshPublicationDescription();
         });
@@ -480,6 +500,12 @@ $("#save-gif-selection").addEventListener("click", async () => {
 batchSelect.addEventListener("change", () => {
   descriptionEdited = false;
   renderAudio();
+});
+$("#publishing-preset").addEventListener("change", () => {
+  descriptionEdited = false;
+  renderAudio();
+  $("#manifest-preview").textContent = "";
+  setStatus("Automation selection updated. Review the production manifest.");
 });
 projectSelect.addEventListener("change", async () => {
   localStorage.setItem("lasu-last-project", projectSelect.value);
