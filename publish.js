@@ -63,6 +63,23 @@ function renderAudio() {
     heading.textContent = `${routeLabel(route)} · ${runs.length} generation run(s)`;
     group.append(heading);
 
+    const controls = document.createElement("div");
+    controls.className = "publish-model-controls";
+    for (const [label, checked] of [["Select all music", true], ["Clear selection", false]]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", () => {
+        for (const input of group.querySelectorAll(".audio-track-selection")) {
+          input.checked = checked && !input.dataset.trackName.startsWith("track_01_");
+        }
+        $("#manifest-preview").textContent = "";
+        setStatus("Audio selection changed. Review the manifest again.");
+      });
+      controls.append(button);
+    }
+    group.append(controls);
+
     for (const batch of runs) {
       const run = document.createElement("div");
       run.className = "publish-generation-run";
@@ -78,7 +95,7 @@ function renderAudio() {
         check.className = "audio-track-selection";
         check.dataset.batchId = batch.id;
         check.dataset.trackName = track.name;
-        check.checked = true;
+        check.checked = !track.name.startsWith("track_01_");
         const description = document.createElement("span");
         description.textContent = `${track.name.replace(/^track_\\d+_/, "").replaceAll("_", " ")} · ${track.recordings.length} recording(s)`;
         label.append(check, description);
