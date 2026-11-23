@@ -9,6 +9,30 @@ const projectSelect = $("#visual-project");
 const audioContainer = $("#audio-tracks");
 const visualContainer = $("#visual-assets");
 const reviewButton = $("#review-manifest");
+const submitButton = $("#submit-production");
+let reviewedManifestJSON = null;
+let submissionInProgress = false;
+
+function invalidateReview() {
+  reviewedManifestJSON = null;
+  submitButton.disabled = true;
+  $("#manifest-preview").textContent = "";
+}
+
+const reviewInputIds = new Set([
+  "audio-batch", "visual-project", "publishing-preset",
+  "trim-boundaries", "internal-fade", "group-fade",
+  "video-title", "video-description", "publication-public"
+]);
+
+for (const eventName of ["input", "change"]) {
+  document.addEventListener(eventName, (event) => {
+    if (reviewInputIds.has(event.target.id) ||
+        event.target.classList?.contains("audio-track-selection")) {
+      invalidateReview();
+    }
+  });
+}
 const status = $("#publish-status");
 let batches = [];
 let visualAssets = [];
@@ -97,6 +121,7 @@ function publicationSourceWarnings() {
 
 let descriptionEdited = false;
 function refreshPublicationDescription(force = false) {
+  invalidateReview();
   if (descriptionEdited && !force) return;
   $("#video-description").value = generatePublicationDescription();
   const warnings = publicationSourceWarnings();
@@ -110,6 +135,7 @@ $("#video-description").addEventListener("input", () => { descriptionEdited = tr
 $("#regenerate-description").addEventListener("click", () => refreshPublicationDescription(true));
 
 function renderAudio() {
+  invalidateReview();
   audioContainer.replaceChildren();
   const matching = batches.filter((batch) => themeKey(batch) === batchSelect.value);
   if (!matching.length) {
@@ -288,6 +314,7 @@ function moveGif(from, to) {
 }
 
 function updateGifSelection() {
+  invalidateReview();
   for (const card of visualContainer.querySelectorAll(".publish-visual-card")) {
     const index = selectedGifPaths.indexOf(card.dataset.path);
     const chosen = index >= 0;
@@ -523,14 +550,69 @@ projectSelect.addEventListener("change", async () => {
   }
 });
 reviewButton.addEventListener("click", () => {
+  if (submissionInProgress) return;
+  invalidateReview();
   try {
-    $("#manifest-preview").textContent = JSON.stringify(previewManifest(), null, 2);
-    setStatus("Production manifest ready for review. Cloud submission is not connected yet.");
+    reviewedManifestJSON = JSON.stringify(previewManifest());
+    $("#manifest-preview").textContent = JSON.stringify(
+      JSON.parse(reviewedManifestJSON), null, 2
+    );
+    submitButton.disabled = false;
+    setStatus("Manifest reviewed. Save to cloud only if every selection and publication field is correct.");
   } catch (error) {
-    $("#manifest-preview").textContent = "";
     setStatus(error.message);
   }
 });
+
+submitButton.addEventListener("click", async () => {
+  if (submissionInProgress) return;
+  if (!reviewedManifestJSON) {
+    setStatus("Review the production manifest before submitting.");
+    return;
+  }
+
+  const snapshot = reviewedManifestJSON;
+  try {
+    if (JSON.stringify(previewManifest()) !== snapshot) {
+      throw new Error("Production settings changed after review. Review again before saving.");
+    }
+  } catch (error) {
+    invalidateReview();
+    setStatus(error.message);
+    return;
+  }
+
+  submissionInProgress = true;
+  submitButton.disabled = true;
+  reviewButton.disabled = true;
+  setStatus("Saving reviewed production to private cloud storage…");
+
+  try {
+    const response = await fetch(`${API}/publishing/productions`, {
+      method: "POST",
+      headers: { ...headers(), "Content-Type": "application/json" },
+      body: snapshot,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `Cloud submission failed (${response.status}).`);
+    }
+    const saved = await response.json();
+    if (!/^[0-9a-f]{32}$/.test(saved.submission_id) ||
+        saved.status !== "reviewed_not_started") {
+      throw new Error("Unexpected production submission response.");
+    }
+    if (reviewedManifestJSON === snapshot) invalidateReview();
+    setStatus(`Production saved to cloud · ID: ${saved.submission_id} · Rendering not started.`);
+  } catch (error) {
+    setStatus(error.message);
+    if (reviewedManifestJSON === snapshot) submitButton.disabled = false;
+  } finally {
+    submissionInProgress = false;
+    reviewButton.disabled = !audioContainer.querySelector(".audio-track-selection");
+  }
+});
+
 
 async function initialize() {
   if (!token) {
