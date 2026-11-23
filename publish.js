@@ -188,6 +188,7 @@ function generatePublicationDescription() {
   if (!selectedRuns.length) return "";
 
   const story = selectedRuns.map((batch) => batch.story?.trim()).find(Boolean);
+  if ($("#publishing-preset").value === "sft_lm_review") return story || "";
   const descriptions = selectedRuns.flatMap((batch) =>
     batch.tracks.map((track) => batch.music_prompts?.[track.name]?.trim()).filter(Boolean)
   );
@@ -225,7 +226,8 @@ function publicationSourceWarnings() {
   if (runs.length && !runs.some((batch) => batch.story?.trim())) {
     missing.push("Original batch story unavailable from the audio API.");
   }
-  if (runs.length && !runs.some((batch) => batch.tracks.some((track) =>
+  if ($("#publishing-preset").value !== "sft_lm_review" &&
+      runs.length && !runs.some((batch) => batch.tracks.some((track) =>
       keys.has(`${batch.id}/${track.name}`) && batch.music_prompts?.[track.name]?.trim()))) {
     missing.push("Original music prompts unavailable from the audio API.");
   }
@@ -236,11 +238,16 @@ let descriptionEdited = false;
 function refreshPublicationDescription(force = false) {
   invalidateReview();
   if (descriptionEdited && !force) return;
+  const sft = $("#publishing-preset").value === "sft_lm_review";
+  $("#publication-destination").textContent =
+    `Destination: D_昧Mei · Playlist: ${sft ? "Stories in Sound" : "For a good day"}`;
   $("#video-description").value = generatePublicationDescription();
   const warnings = publicationSourceWarnings();
   $("#description-note").textContent = warnings.length
     ? `Missing source data: ${warnings.join(" ")} Edit the draft before publication.`
-    : "Draft uses original batch story and music prompts. Edit before publication; verified chapter timestamps are added after composition.";
+    : sft
+      ? "Description contains only the original batch story."
+      : "Draft uses original batch story and music prompts. Edit before publication; verified chapter timestamps are added after composition.";
   descriptionEdited = false;
 }
 
@@ -650,7 +657,8 @@ function previewManifest() {
     },
     publication: {
       channel: "D_昧Mei",
-      playlist: "For a good day",
+      playlist: $("#publishing-preset").value === "sft_lm_review"
+        ? "Stories in Sound" : "For a good day",
       title,
       description: $("#video-description").value,
       visibility: $("#publication-public").checked ? "public" : "private",
