@@ -8,8 +8,9 @@
   <title>Lasu 🦩 · Publishing Studio</title>
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./library.css?v=0bbbae1">
-  <link rel="stylesheet" href="./publish.css?v=cloud-task-report-01">
-  <script src="./publish.js?v=cloud-task-report-01" defer></script>
+  <link rel="stylesheet" href="./publish.css?v=sft-review-01">
+  <script src="./publish_audio_review.js?v=sft-review-01" defer></script>
+  <script src="./publish.js?v=sft-review-01" defer></script>
 </head>
 <body>
   <div class="background" aria-hidden="true"></div>
@@ -34,6 +35,7 @@
       <label for="publishing-preset">Automation</label>
       <select id="publishing-preset">
         <option value="turbo_long_listen">Turbo long listen</option>
+          <option value="sft_lm_review">SFT+LM · Review and compose</option>
         <option value="manual">Manual selection</option>
       </select>
       <div id="audio-tracks" class="publish-items" aria-live="polite"></div>

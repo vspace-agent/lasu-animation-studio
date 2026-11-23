@@ -248,6 +248,7 @@ $("#video-description").addEventListener("input", () => { descriptionEdited = tr
 $("#regenerate-description").addEventListener("click", () => refreshPublicationDescription(true));
 
 function renderAudio() {
+  LasuAudioReview.reset();
   invalidateReview();
   audioContainer.replaceChildren();
   const matching = batches.filter((batch) => themeKey(batch) === batchSelect.value);
@@ -262,12 +263,35 @@ function renderAudio() {
   summary.textContent = `${matching.length} generation runs · ${totalTracks} tracks · ${totalRecordings} recordings`;
   audioContainer.append(summary);
 
+  const sftReview = $("#publishing-preset").value === "sft_lm_review";
+  if (sftReview) {
+    LasuAudioReview.makeToolbar(
+      audioContainer, API, token,
+      () => {
+        for (const input of audioContainer.querySelectorAll(".audio-track-selection")) {
+          if (input.dataset.batchId !== undefined) {
+            const corresponding = [...audioContainer.querySelectorAll(".sft-recording-selection")]
+              .filter((take) =>
+                take.dataset.batchId === input.dataset.batchId &&
+                take.dataset.trackName === input.dataset.trackName
+              );
+            if (corresponding.length) input.checked = corresponding.some((take) => take.checked);
+          }
+        }
+        invalidateReview();
+        refreshPublicationDescription();
+      },
+      setStatus
+    );
+  }
+
   const routes = ["turbo", "sft_lm", ...new Set(matching.map((batch) => batch.route))];
   for (const route of [...new Set(routes)]) {
     const runs = matching.filter((batch) => batch.route === route);
-    if (!runs.length) continue;
+    if (!runs.length || (sftReview && route !== "sft_lm")) continue;
     const group = document.createElement("details");
     group.className = "publish-model-group";
+    group.open = sftReview;
     const heading = document.createElement("summary");
     const modelRecordings = runs.reduce((sum, batch) => sum + batch.recording_count, 0);
     heading.textContent = `${routeLabel(route)} · ${runs.length} runs · ${modelRecordings} recordings`;
@@ -283,7 +307,10 @@ function renderAudio() {
         for (const input of group.querySelectorAll(".audio-track-selection")) {
           input.checked = checked && !input.dataset.trackName.startsWith("track_01_");
         }
-        $("#publishing-preset").value = "manual";
+        for (const entry of group.querySelectorAll(".sft-recording-selection")) {
+          entry.checked = checked;
+        }
+        if (!sftReview) $("#publishing-preset").value = "manual";
         $("#manifest-preview").textContent = "";
         refreshPublicationDescription();
         setStatus("Audio selection changed. Review the manifest again.");
@@ -295,6 +322,7 @@ function renderAudio() {
     for (const batch of runs) {
       const run = document.createElement("details");
       run.className = "publish-generation-run";
+      run.open = sftReview;
       const runTitle = document.createElement("summary");
       runTitle.textContent = `Run ${batch.id.replace("studio_batch_", "").slice(0, 8)} · ${batch.recording_count} recordings`;
       run.append(runTitle);
@@ -307,18 +335,33 @@ function renderAudio() {
         check.className = "audio-track-selection";
         check.dataset.batchId = batch.id;
         check.dataset.trackName = track.name;
-        check.checked = $("#publishing-preset").value === "turbo_long_listen"
-          ? batch.route === "turbo" && !/^track_01_/.test(track.name)
-          : false;
+        check.checked = sftReview
+          ? batch.route === "sft_lm" && track.name !== "track_01_batch_story"
+          : $("#publishing-preset").value === "turbo_long_listen"
+            ? batch.route === "turbo" && track.name !== "track_01_batch_story"
+            : false;
         const description = document.createElement("span");
         description.textContent = `${track.name.replace(/^track_\\d+_/, "").replaceAll("_", " ")} · ${track.recordings.length} recording(s)`;
         label.append(check, description);
         check.addEventListener("change", () => {
-          $("#publishing-preset").value = "manual";
+          if (!sftReview) $("#publishing-preset").value = "manual";
           $("#manifest-preview").textContent = "";
           refreshPublicationDescription();
         });
         run.append(label);
+        if (sftReview && batch.route === "sft_lm" && !/^track_01_/.test(track.name)) {
+          const recordings = document.createElement("div");
+          recordings.className = "sft-recordings";
+          for (const recording of track.recordings) {
+            LasuAudioReview.addRecording(recordings, batch, track, recording);
+          }
+          run.append(recordings);
+          check.addEventListener("change", () => {
+            for (const entry of recordings.querySelectorAll(".sft-recording-selection")) {
+              entry.checked = check.checked;
+            }
+          });
+        }
       }
       group.append(run);
     }
@@ -541,7 +584,17 @@ async function loadProjects() {
 }
 
 function previewManifest() {
+  if ($("#publishing-preset").value === "sft_lm_review") {
+    const cuts = LasuAudioReview.selections();
+    if (cuts.some((cut) => cut.start_seconds !== 0 || cut.end_seconds !== null)) {
+      throw new Error("Trim previews are ready; saving trim settings requires the SFT+LM composition backend.");
+    }
+  }
   const selected = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
+  const sftMode = $("#publishing-preset").value === "sft_lm_review";
+  const takePaths = sftMode
+    ? new Set(LasuAudioReview.selections().map((entry) => entry.path))
+    : null;
   const selectedKeys = new Set(
     selected.map((input) => `${input.dataset.batchId}/${input.dataset.trackName}`)
   );
@@ -554,10 +607,14 @@ function previewManifest() {
         .filter((track) => selectedKeys.has(`${batch.id}/${track.name}`))
         .map((track) => ({
           name: track.name,
-          recordings: track.recordings.map((recording) => recording.path),
-        })),
+          recordings: sftMode
+            ? track.recordings.filter((recording) => takePaths.has(recording.path))
+                .map((recording) => recording.path)
+            : track.recordings.map((recording) => recording.path),
+        }))
+        .filter((track) => track.recordings.length > 0),
     }))
-    .filter((batch) => batch.tracks.length);
+    .filter((batch) => batch.tracks.length && (!sftMode || batch.route === "sft_lm"));
   const tracks = selectedBatches.flatMap((batch) => batch.tracks);
   if (!tracks.length) throw new Error("Select at least one audio track.");
   if (!selectedGifPaths.length) throw new Error("Select at least one GIF.");
