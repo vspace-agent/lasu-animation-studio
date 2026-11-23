@@ -22,7 +22,8 @@ function invalidateReview() {
 const reviewInputIds = new Set([
   "audio-batch", "visual-project", "publishing-preset",
   "trim-boundaries", "internal-fade", "group-fade",
-  "video-title", "video-description", "publication-public"
+  "video-title", "video-description", "publication-public",
+  "youtube-channel", "youtube-playlist"
 ]);
 
 for (const eventName of ["input", "change"]) {
@@ -234,13 +235,73 @@ function publicationSourceWarnings() {
   return missing;
 }
 
+// Public destination options are verified metadata; uploading additionally requires matching channel OAuth.
+let youtubeCatalog = null;
+const youtubeChannel = $("#youtube-channel");
+const youtubePlaylist = $("#youtube-playlist");
+const DEFAULT_CHANNEL = "UCLgSpraIniX8rbDhGYWHIMA";
+const DEFAULT_PLAYLISTS = {
+  turbo: "PLM6FxJNIFPis",
+  sft_lm: "PLbrELMMTlxxM",
+};
+function chosenPlaylist() {
+  return youtubeCatalog?.channels
+    .find((channel) => channel.id === youtubeChannel.value)?.playlists
+    .find((playlist) => playlist.id === youtubePlaylist.value);
+}
+function refreshPlaylistChoices(preferred = "") {
+  const channel = youtubeCatalog?.channels.find((item) => item.id === youtubeChannel.value);
+  youtubePlaylist.replaceChildren(new Option("Choose a playlist", ""));
+  for (const playlist of channel?.playlists || []) {
+    youtubePlaylist.add(new Option(playlist.title, playlist.id));
+  }
+  const model = $("#publishing-preset").value === "sft_lm_review" ? "sft_lm" : "turbo";
+  const requested = preferred || (channel?.id === DEFAULT_CHANNEL ? DEFAULT_PLAYLISTS[model] : "");
+  youtubePlaylist.value = channel?.playlists.some((item) => item.id === requested) ? requested : "";
+  updateDestinationNotice();
+}
+function updateDestinationNotice() {
+  const channel = youtubeCatalog?.channels.find((item) => item.id === youtubeChannel.value);
+  const playlist = chosenPlaylist();
+  const supported = channel?.id === DEFAULT_CHANNEL;
+  $("#publication-destination").textContent = !channel
+    ? "Choose a YouTube channel and playlist."
+    : !supported
+      ? `${channel.title}: channel verified; cloud publishing authorization not yet connected.`
+      : playlist
+        ? `Destination: ${channel.title} · Playlist: ${playlist.title}`
+        : "Choose a playlist.";
+}
+async function loadYoutubeDestinations() {
+  const response = await fetch("./youtube_destinations.json?v=youtube-choices-04", { cache: "no-store" });
+  if (!response.ok) throw new Error("YouTube destination catalog unavailable.");
+  const catalog = await response.json();
+  if (catalog.schema_version !== 1 || !Array.isArray(catalog.channels)) {
+    throw new Error("Invalid YouTube destination catalog.");
+  }
+  youtubeCatalog = catalog;
+  youtubeChannel.replaceChildren(new Option("Choose a channel", ""));
+  for (const channel of catalog.channels) {
+    youtubeChannel.add(new Option(channel.title, channel.id));
+  }
+  youtubeChannel.value = DEFAULT_CHANNEL;
+  refreshPlaylistChoices();
+}
+youtubeChannel.addEventListener("change", () => {
+  refreshPlaylistChoices();
+  invalidateReview();
+});
+youtubePlaylist.addEventListener("change", () => {
+  updateDestinationNotice();
+  invalidateReview();
+});
+
 let descriptionEdited = false;
 function refreshPublicationDescription(force = false) {
   invalidateReview();
   if (descriptionEdited && !force) return;
   const sft = $("#publishing-preset").value === "sft_lm_review";
-  $("#publication-destination").textContent =
-    `Destination: D_昧Mei · Playlist: ${sft ? "Stories in Sound" : "For a good day"}`;
+  updateDestinationNotice();
   $("#video-description").value = generatePublicationDescription();
   const warnings = publicationSourceWarnings();
   $("#description-note").textContent = warnings.length
@@ -633,6 +694,10 @@ function previewManifest() {
   if (![internalFade, groupFade].every((value) => Number.isFinite(value) && value > 0 && value <= 10)) {
     throw new Error("Crossfade durations must be greater than 0 and at most 10 seconds.");
   }
+  if (!chosenPlaylist()) throw new Error("Choose a verified YouTube playlist.");
+  if (youtubeChannel.value !== DEFAULT_CHANNEL) {
+    throw new Error("Asopo zala is verified, but cloud publishing authorization is not connected yet.");
+  }
   const title = $("#video-title").value.trim();
   if (!title || title.length > 100) throw new Error("Enter a YouTube title (up to 100 characters).");
 
@@ -656,9 +721,10 @@ function previewManifest() {
       group_crossfade_seconds: groupFade,
     },
     publication: {
-      channel: "D_昧Mei",
-      playlist: $("#publishing-preset").value === "sft_lm_review"
-        ? "Stories in Sound" : "For a good day",
+      channel: youtubeCatalog?.channels.find((item) => item.id === youtubeChannel.value)?.title || "",
+      channel_id: youtubeChannel.value,
+      playlist: chosenPlaylist()?.title || "",
+      playlist_id: youtubePlaylist.value,
       title,
       description: $("#video-description").value,
       visibility: $("#publication-public").checked ? "public" : "private",
@@ -715,6 +781,7 @@ batchSelect.addEventListener("change", () => {
 });
 $("#publishing-preset").addEventListener("change", () => {
   descriptionEdited = false;
+  if (youtubeChannel.value === DEFAULT_CHANNEL) refreshPlaylistChoices();
   renderAudio();
   $("#manifest-preview").textContent = "";
   setStatus("Automation selection updated. Review the production manifest.");
@@ -807,7 +874,7 @@ async function initialize() {
     return;
   }
   try {
-    await Promise.all([loadAudio(), loadProjects()]);
+    await Promise.all([loadAudio(), loadProjects(), loadYoutubeDestinations()]);
     refreshPublicationDescription();
     $("#publish-auth").textContent = "Private cloud access enabled.";
     setStatus("Choose the recordings and visual, then review the production manifest.");
