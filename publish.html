@@ -8,8 +8,8 @@
   <title>Lasu 🦩 · Publishing Studio</title>
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./library.css?v=0bbbae1">
-  <link rel="stylesheet" href="./publish.css?v=story-led-description-01">
-  <script src="./publish.js?v=story-led-description-01" defer></script>
+  <link rel="stylesheet" href="./publish.css?v=cloud-task-report-01">
+  <script src="./publish.js?v=cloud-task-report-01" defer></script>
 </head>
 <body>
   <div class="background" aria-hidden="true"></div>
@@ -82,6 +82,17 @@
       <button id="submit-production" type="button" disabled>Save reviewed production to cloud</button>
       <p>Saving preserves the approved manifest; it does not start rendering or publish to YouTube.</p>
       <p id="publish-status" role="status" aria-live="polite"></p>
+      <details id="publish-task-report" class="publish-task-report">
+        <summary>Cloud task · <span id="publish-task-stage">Not started</span></summary>
+        <p id="publish-task-message" role="status" aria-live="polite">No submission yet.</p>
+        <progress id="publish-task-progress" max="100" hidden></progress>
+        <p id="publish-task-percentage" hidden></p>
+        <div id="publish-task-error" hidden>
+          <p>Something went wrong. Copy the diagnostic report to share with Hormus.</p>
+          <button id="copy-publish-error" type="button">Copy error report</button>
+          <span id="copy-publish-feedback" role="status" aria-live="polite"></span>
+        </div>
+      </details>
       <pre id="manifest-preview" aria-label="Production manifest preview"></pre>
     </section>
   </main>

@@ -85,3 +85,24 @@
 .publish-generation-run > summary { font-size: .85rem; }
 .publish-model-group:not([open]),
 .publish-generation-run:not([open]) { padding-bottom: .8rem; }
+
+/* Keep the cloud submission report compact until expanded. */
+.publish-task-report {
+  margin: .8rem 0 1.2rem;
+  padding: .75rem .9rem;
+  border: 1px solid #cbd9d2;
+  border-radius: .8rem;
+  background: rgba(234, 241, 235, .65);
+}
+.publish-task-report > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #405b52;
+}
+.publish-task-report > p { margin: .65rem 0; }
+.publish-task-report progress { display: block; width: 100%; height: .85rem; }
+.publish-task-report [hidden] { display: none !important; }
+#publish-task-percentage { font-size: .85rem; color: #405b52; }
+#publish-task-error { padding-top: .3rem; }
+#copy-publish-error { padding: .45rem .75rem; cursor: pointer; }
+#copy-publish-feedback { margin-left: .6rem; }

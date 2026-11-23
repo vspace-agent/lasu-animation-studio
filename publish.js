@@ -33,6 +33,119 @@ for (const eventName of ["input", "change"]) {
     }
   });
 }
+const taskPanel = $("#publish-task-report");
+const taskStage = $("#publish-task-stage");
+const taskMessage = $("#publish-task-message");
+const taskProgress = $("#publish-task-progress");
+const taskPercentage = $("#publish-task-percentage");
+const taskError = $("#publish-task-error");
+const copyErrorButton = $("#copy-publish-error");
+let lastPublishError = "";
+
+function updateTaskReport(stage, message, percent = null) {
+  taskStage.textContent = stage;
+  taskMessage.textContent = message;
+  const measured = Number.isFinite(percent);
+  taskProgress.hidden = !measured;
+  taskPercentage.hidden = !measured;
+  if (measured) {
+    const value = Math.max(0, Math.min(100, Math.round(percent)));
+    taskProgress.value = value;
+    taskPercentage.textContent = `Request upload: ${value}%`;
+  }
+  taskError.hidden = true;
+  $("#copy-publish-feedback").textContent = "";
+}
+
+function reportSubmissionError(error, phase, httpStatus = null, detail = null) {
+  const message = error instanceof Error ? error.message : String(error);
+  const diagnostic = {
+    operation: "POST /publishing/productions",
+    stage: phase,
+    http_status: httpStatus,
+    error: message,
+    server_detail: detail,
+    timestamp: new Date().toISOString(),
+    page: window.location.pathname,
+    stack: error instanceof Error ? error.stack || null : null,
+  };
+  lastPublishError = JSON.stringify(diagnostic, null, 2);
+  updateTaskReport("Error", "Cloud submission failed. Copy the error report for diagnosis.");
+  taskError.hidden = false;
+  taskPanel.open = true;
+}
+
+copyErrorButton.addEventListener("click", async () => {
+  if (!lastPublishError) return;
+  const feedback = $("#copy-publish-feedback");
+  try {
+    await navigator.clipboard.writeText(lastPublishError);
+    feedback.textContent = "Copied.";
+  } catch (_) {
+    const input = document.createElement("textarea");
+    input.value = lastPublishError;
+    input.setAttribute("readonly", "");
+    input.style.position = "fixed";
+    input.style.left = "-9999px";
+    document.body.append(input);
+    input.select();
+    const copied = document.execCommand("copy");
+    input.remove();
+    feedback.textContent = copied ? "Copied." : "Copy unavailable in this browser.";
+  }
+});
+
+// XMLHttpRequest reports actual request-body bytes; server-side validation has no percentage API.
+function submitReviewedManifest(snapshot, onUploadProgress, onStage) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API}/publishing/productions`);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.timeout = 120000;
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onUploadProgress(100 * event.loaded / event.total);
+      }
+    });
+    xhr.upload.addEventListener("load", () => {
+      onStage("Verifying", "Request uploaded. Checking selected cloud assets and saving the manifest.");
+    });
+    xhr.addEventListener("load", () => {
+      let payload;
+      try {
+        payload = JSON.parse(xhr.responseText);
+      } catch (_) {
+        const error = new Error(`Unexpected API response (HTTP ${xhr.status}).`);
+        error.httpStatus = xhr.status;
+        error.serverDetail = xhr.responseText.slice(0, 1500);
+        reject(error);
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const detail = payload.detail ?? payload;
+        const error = new Error(
+          typeof detail === "string" ? detail : `Cloud submission failed (HTTP ${xhr.status}).`
+        );
+        error.httpStatus = xhr.status;
+        error.serverDetail = detail;
+        reject(error);
+        return;
+      }
+      resolve(payload);
+    });
+    for (const [eventName, message] of [
+      ["error", "Network error while contacting the production API."],
+      ["timeout", "The production API did not respond in time."],
+      ["abort", "Cloud submission was interrupted."],
+    ]) {
+      xhr.addEventListener(eventName, () => reject(new Error(message)));
+    }
+    xhr.send(snapshot);
+  });
+}
+
 const status = $("#publish-status");
 let batches = [];
 let visualAssets = [];
@@ -586,25 +699,33 @@ submitButton.addEventListener("click", async () => {
   submitButton.disabled = true;
   reviewButton.disabled = true;
   setStatus("Saving reviewed production to private cloud storage…");
+  lastPublishError = "";
+  taskPanel.open = true;
+  let phase = "Uploading request";
+  updateTaskReport(phase, "Sending the reviewed manifest to Lasu Cloud.");
 
   try {
-    const response = await fetch(`${API}/publishing/productions`, {
-      method: "POST",
-      headers: { ...headers(), "Content-Type": "application/json" },
-      body: snapshot,
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `Cloud submission failed (${response.status}).`);
-    }
-    const saved = await response.json();
+    const saved = await submitReviewedManifest(
+      snapshot,
+      (percent) => {
+        if (phase === "Uploading request") {
+          updateTaskReport(phase, "Sending the reviewed manifest to Lasu Cloud.", percent);
+        }
+      },
+      (stage, message) => {
+        phase = stage;
+        updateTaskReport(stage, message);
+      }
+    );
     if (!/^[0-9a-f]{32}$/.test(saved.submission_id) ||
         saved.status !== "reviewed_not_started") {
       throw new Error("Unexpected production submission response.");
     }
     if (reviewedManifestJSON === snapshot) invalidateReview();
+    updateTaskReport("Finished", `Saved to cloud · ID: ${saved.submission_id}. Rendering not started.`);
     setStatus(`Production saved to cloud · ID: ${saved.submission_id} · Rendering not started.`);
   } catch (error) {
+    reportSubmissionError(error, phase, error.httpStatus ?? null, error.serverDetail ?? null);
     setStatus(error.message);
     if (reviewedManifestJSON === snapshot) submitButton.disabled = false;
   } finally {
