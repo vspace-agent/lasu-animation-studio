@@ -151,6 +151,22 @@ const status = $("#publish-status");
 let batches = [];
 let visualAssets = [];
 let selectedGifPaths = [];
+let visualCompositionDraft = null;
+const composerButton = $("#open-visual-composer");
+const composerStage = $("#visual-composer-stage");
+const composerFrame = $("#visual-composer-frame");
+const composerStatus = $("#visual-composer-status");
+
+function currentComposeSelection() {
+  return { schema_version: 1, project: projectSelect.value,
+    assets: selectedGifPaths.map(path => ({ path, kind: "gif" })) };
+}
+function invalidateVisualComposition() {
+  visualCompositionDraft = null;
+  composerStage.hidden = true;
+  composerFrame.removeAttribute("src");
+  composerStatus.textContent = "Visual selection changed; reopen Compose to refine.";
+}
 
 function headers() {
   return { Authorization: `Bearer ${token}` };
@@ -539,6 +555,7 @@ function moveGif(from, to) {
 
 function updateGifSelection() {
   invalidateReview();
+  invalidateVisualComposition();
   for (const card of visualContainer.querySelectorAll(".publish-visual-card")) {
     const index = selectedGifPaths.indexOf(card.dataset.path);
     const chosen = index >= 0;
@@ -549,6 +566,7 @@ function updateGifSelection() {
   }
   renderGifOrder();
   $("#save-gif-selection").disabled = selectedGifPaths.length === 0;
+  composerButton.disabled = selectedGifPaths.length === 0;
 }
 
 async function loadVisuals() {
@@ -885,3 +903,39 @@ async function initialize() {
   }
 }
 initialize();
+
+// Compose shares the existing Publishing Studio asset selection and order.
+composerButton.addEventListener("click", () => {
+  if (!selectedGifPaths.length || !projectSelect.value) return;
+  composerStage.hidden = false;
+  composerStatus.textContent = "Loading ordered GCP assets into Compose…";
+  composerFrame.src = "./compose/";
+});
+$("#close-visual-composer").addEventListener("click", () => {
+  composerStage.hidden = true;
+  composerFrame.removeAttribute("src");
+});
+window.addEventListener("message", event => {
+  if (event.origin !== location.origin || event.source !== composerFrame.contentWindow) return;
+  const message = event.data;
+  if (message?.type === "lasu:compose:ready" && !composerStage.hidden) {
+    composerFrame.contentWindow.postMessage(
+      { type: "lasu:compose:load", selection: currentComposeSelection() }, location.origin);
+  } else if (message?.type === "lasu:compose:loaded") {
+    composerStatus.textContent =
+      `Compose loaded ${message.count} GIFs in the selected publishing order.`;
+  } else if (message?.type === "lasu:compose:error") {
+    composerStatus.textContent = message.error || "Compose could not load these assets.";
+  } else if (message?.type === "lasu:compose:draft") {
+    const draft = message.draft;
+    if (draft?.project !== projectSelect.value ||
+        JSON.stringify(draft.source_paths) !== JSON.stringify(selectedGifPaths)) {
+      composerStatus.textContent = "Selection changed; draft rejected.";
+      return;
+    }
+    visualCompositionDraft = draft;
+    composerStatus.textContent =
+      `Draft received (${draft.clips.length} clips). This is a browser-side refinement; ` +
+      "cloud manifest v2 does not yet support custom timeline rendering.";
+  }
+});

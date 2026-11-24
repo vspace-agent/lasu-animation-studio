@@ -51,6 +51,13 @@
       <ol id="visual-order" class="publish-order-list" aria-live="polite"></ol>
       <button id="save-gif-selection" type="button" disabled>Save ordered GIF selection</button>
       <p id="gif-save-status" role="status" aria-live="polite"></p>
+      <button id="open-visual-composer" type="button" disabled>Refine ordered visuals in Compose</button>
+      <p id="visual-composer-status" role="status" aria-live="polite"></p>
+      <div id="visual-composer-stage" hidden>
+        <iframe id="visual-composer-frame" title="Lasu visual composition timeline"
+          style="width:100%;height:760px;border:1px solid #777;border-radius:10px;background:#111"></iframe>
+        <button id="close-visual-composer" type="button">Close timeline editor</button>
+      </div>
     </section>
 
     <section class="panel" aria-labelledby="composition-heading">
