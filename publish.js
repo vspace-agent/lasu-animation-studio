@@ -21,7 +21,7 @@ function invalidateReview() {
 
 const reviewInputIds = new Set([
   "audio-batch", "visual-project", "publishing-preset",
-  "trim-boundaries", "internal-fade", "group-fade", "jazz-refiner-preset",
+  "trim-boundaries", "internal-fade", "group-fade", "jazz-refiner-preset", "jazz-refiner-recording",
   "video-title", "video-description", "publication-public",
   "youtube-channel", "youtube-playlist"
 ]);
@@ -163,6 +163,7 @@ function currentComposeSelection() {
 }
 function invalidateVisualComposition() {
   visualCompositionDraft = null;
+  invalidateReview();
   composerStage.hidden = true;
   composerFrame.removeAttribute("src");
   composerStatus.textContent = "Visual selection changed; reopen Compose to refine.";
@@ -720,11 +721,16 @@ function previewManifest() {
   if (!title || title.length > 100) throw new Error("Enter a YouTube title (up to 100 characters).");
 
   return {
-    schema_version: 2,
+    schema_version: 3,
     audio: {
       bucket: "mushroom-house-studio-audio-staging",
       theme: batches.find((batch) => themeKey(batch) === batchSelect.value)?.theme || null,
       batches: selectedBatches,
+      refinements: Object.fromEntries(
+        [...jazzRefinements.entries()].filter(([path]) =>
+          selectedBatches.some(batch => batch.tracks.some(track => track.recordings.includes(path)))
+        )
+      ),
     },
     visual: {
       bucket: "mushroom-house-visual-assets",
@@ -732,6 +738,7 @@ function previewManifest() {
       kind: "gif",
       gif_paths: [...selectedGifPaths],
       playback: "loop_per_track",
+      timeline: visualCompositionDraft ? structuredClone(visualCompositionDraft) : null,
     },
     composition: {
       trim_boundaries: $("#trim-boundaries").checked,
@@ -933,7 +940,8 @@ window.addEventListener("message", event => {
       composerStatus.textContent = "Selection changed; draft rejected.";
       return;
     }
-    visualCompositionDraft = draft;
+    visualCompositionDraft = structuredClone(draft);
+    invalidateReview();
     composerStatus.textContent =
       `Draft received (${draft.clips.length} clips). This is a browser-side refinement; ` +
       "cloud manifest v2 does not yet support custom timeline rendering.";
@@ -941,6 +949,7 @@ window.addEventListener("message", event => {
 });
 
 // Jazz Refiner is part of the existing audio collection, not a second importer.
+const jazzRefinements = new Map();
 const jazzRecording = $("#jazz-refiner-recording");
 const jazzPreset = $("#jazz-refiner-preset");
 const jazzPreview = $("#jazz-refiner-preview");
@@ -982,16 +991,23 @@ function refreshJazzRefiner() {
   jazzRecording.replaceChildren(new Option("Choose selected recording…", ""));
   for (const path of paths) jazzRecording.add(new Option(path.split("/").pop(), path));
   if (paths.includes(previous)) jazzRecording.value = previous;
+  jazzPreset.value = jazzRefinements.get(jazzRecording.value) || "";
   jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
   if (!paths.length) jazzStatus.textContent = "Select a cloud music track first.";
 }
 
 jazzRecording.addEventListener("change", () => {
   stopJazzPreview();
+  jazzPreset.value = jazzRefinements.get(jazzRecording.value) || "";
   jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
 });
 jazzPreset.addEventListener("change", () => {
   stopJazzPreview();
+  if (jazzRecording.value && selectedJazzRecordingPaths().includes(jazzRecording.value)) {
+    if (jazzPreset.value) jazzRefinements.set(jazzRecording.value, jazzPreset.value);
+    else jazzRefinements.delete(jazzRecording.value);
+  }
+  invalidateReview();
   jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
   jazzStatus.textContent = jazzPreset.value
     ? "Refinement rule selected; preview before approving."
