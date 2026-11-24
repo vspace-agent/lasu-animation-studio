@@ -21,7 +21,7 @@ function invalidateReview() {
 
 const reviewInputIds = new Set([
   "audio-batch", "visual-project", "publishing-preset",
-  "trim-boundaries", "internal-fade", "group-fade",
+  "trim-boundaries", "internal-fade", "group-fade", "jazz-refiner-preset",
   "video-title", "video-description", "publication-public",
   "youtube-channel", "youtube-playlist"
 ]);
@@ -939,3 +939,105 @@ window.addEventListener("message", event => {
       "cloud manifest v2 does not yet support custom timeline rendering.";
   }
 });
+
+// Jazz Refiner is part of the existing audio collection, not a second importer.
+const jazzRecording = $("#jazz-refiner-recording");
+const jazzPreset = $("#jazz-refiner-preset");
+const jazzPreview = $("#jazz-refiner-preview");
+const jazzPlayer = $("#jazz-refiner-player");
+const jazzStatus = $("#jazz-refiner-status");
+let jazzPreviewURL = null;
+let jazzPreviewController = null;
+
+function selectedJazzRecordingPaths() {
+  const checked = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
+  const sft = $("#publishing-preset").value === "sft_lm_review";
+  const included = new Set(checked.map(input =>
+    `${input.dataset.batchId}/${input.dataset.trackName}`));
+  const selectedTakes = sft
+    ? new Set([...audioContainer.querySelectorAll(".sft-recording-selection:checked")]
+        .map(input => input.dataset.path))
+    : null;
+  return batches.filter(batch => themeKey(batch) === batchSelect.value)
+    .filter(batch => !sft || batch.route === "sft_lm")
+    .flatMap(batch => batch.tracks
+      .filter(track => included.has(`${batch.id}/${track.name}`))
+      .flatMap(track => track.recordings.map(recording => recording.path)
+        .filter(path => !selectedTakes || selectedTakes.has(path))));
+}
+
+function stopJazzPreview() {
+  jazzPreviewController?.abort();
+  jazzPreviewController = null;
+  jazzPlayer.pause();
+  jazzPlayer.removeAttribute("src");
+  jazzPlayer.load();
+  if (jazzPreviewURL) URL.revokeObjectURL(jazzPreviewURL);
+  jazzPreviewURL = null;
+}
+
+function refreshJazzRefiner() {
+  const previous = jazzRecording.value;
+  const paths = [...new Set(selectedJazzRecordingPaths())];
+  jazzRecording.replaceChildren(new Option("Choose selected recording…", ""));
+  for (const path of paths) jazzRecording.add(new Option(path.split("/").pop(), path));
+  if (paths.includes(previous)) jazzRecording.value = previous;
+  jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
+  if (!paths.length) jazzStatus.textContent = "Select a cloud music track first.";
+}
+
+jazzRecording.addEventListener("change", () => {
+  stopJazzPreview();
+  jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
+});
+jazzPreset.addEventListener("change", () => {
+  stopJazzPreview();
+  jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
+  jazzStatus.textContent = jazzPreset.value
+    ? "Refinement rule selected; preview before approving."
+    : "Original recording selected; no refinement.";
+});
+jazzPreview.addEventListener("click", async () => {
+  if (!selectedJazzRecordingPaths().includes(jazzRecording.value) ||
+      !["warm_evening", "soft_velvet", "small_room", "midnight_mist"].includes(jazzPreset.value)) {
+    jazzStatus.textContent = "Choose a currently selected recording and jazz preset.";
+    return;
+  }
+  stopJazzPreview();
+  const controller = new AbortController();
+  jazzPreviewController = controller;
+  jazzPreview.disabled = true;
+  jazzStatus.textContent = "Rendering temporary 30-second preview…";
+  try {
+    const response = await fetch(
+      `${API}/audio/refiner/preview?${new URLSearchParams({
+        path: jazzRecording.value, preset: jazzPreset.value
+      })}`, { headers: headers(), signal: controller.signal, cache: "no-store" });
+    if (!response.ok) throw new Error(`Jazz preview HTTP ${response.status}`);
+    const blob = await response.blob();
+    if (controller.signal.aborted) return;
+    jazzPreviewURL = URL.createObjectURL(blob);
+    jazzPlayer.src = jazzPreviewURL;
+    jazzStatus.textContent = "Preview ready. Original cloud recording is unchanged.";
+    await jazzPlayer.play().catch(() => {});
+  } catch (error) {
+    if (error.name !== "AbortError")
+      jazzStatus.textContent = `Refinement unavailable: ${error.message}`;
+  } finally {
+    if (jazzPreviewController === controller) {
+      jazzPreviewController = null;
+      jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
+    }
+  }
+});
+
+audioContainer.addEventListener("change", () => {
+  stopJazzPreview();
+  refreshJazzRefiner();
+});
+const jazzObserve = new MutationObserver(() => {
+  if (!audioContainer.querySelector(".audio-track-selection")) return;
+  refreshJazzRefiner();
+});
+jazzObserve.observe(audioContainer, { childList: true, subtree: false });
+window.addEventListener("pagehide", stopJazzPreview);
