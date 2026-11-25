@@ -1067,6 +1067,15 @@ window.addEventListener("message", event => {
 const jazzRefinements = new Map();
 const jazzRecording = $("#jazz-refiner-recording");
 const jazzPreset = $("#jazz-refiner-preset");
+const jazzDescription = $("#jazz-refiner-description");
+const jazzRuleIDs = new Set(
+  Array.from(jazzPreset.options, option => option.value).filter(Boolean)
+);
+function updateJazzDescription() {
+  const option = jazzPreset.selectedOptions[0];
+  jazzDescription.textContent = option?.dataset.description || "";
+}
+
 const jazzPreview = $("#jazz-refiner-preview");
 const jazzPlayer = $("#jazz-refiner-player");
 const jazzStatus = $("#jazz-refiner-status");
@@ -1107,6 +1116,7 @@ function refreshJazzRefiner() {
   for (const path of paths) jazzRecording.add(new Option(path.split("/").pop(), path));
   if (paths.includes(previous)) jazzRecording.value = previous;
   jazzPreset.value = jazzRefinements.get(jazzRecording.value) || "";
+  updateJazzDescription();
   jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
   if (!paths.length) jazzStatus.textContent = "Select a cloud music track first.";
 }
@@ -1114,9 +1124,11 @@ function refreshJazzRefiner() {
 jazzRecording.addEventListener("change", () => {
   stopJazzPreview();
   jazzPreset.value = jazzRefinements.get(jazzRecording.value) || "";
+  updateJazzDescription();
   jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
 });
 jazzPreset.addEventListener("change", () => {
+  updateJazzDescription();
   stopJazzPreview();
   if (jazzRecording.value && selectedJazzRecordingPaths().includes(jazzRecording.value)) {
     if (jazzPreset.value) jazzRefinements.set(jazzRecording.value, jazzPreset.value);
@@ -1130,7 +1142,7 @@ jazzPreset.addEventListener("change", () => {
 });
 jazzPreview.addEventListener("click", async () => {
   if (!selectedJazzRecordingPaths().includes(jazzRecording.value) ||
-      !["warm_evening", "soft_velvet", "small_room", "midnight_mist"].includes(jazzPreset.value)) {
+      !jazzRuleIDs.has(jazzPreset.value)) {
     jazzStatus.textContent = "Choose a currently selected recording and jazz preset.";
     return;
   }

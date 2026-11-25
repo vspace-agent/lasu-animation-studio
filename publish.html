@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="./library.css?v=0bbbae1">
   <link rel="stylesheet" href="./publish.css?v=youtube-choices-04">
   <script src="./publish_audio_review.js?v=youtube-choices-04" defer></script>
-  <script src="./publish.js?v=still-cover-01" defer></script>
+  <script src="./publish.js?v=full-refiner-01" defer></script>
 </head>
 <body>
   <div class="background" aria-hidden="true"></div>
@@ -42,17 +42,38 @@
       <div id="audio-tracks" class="publish-items" aria-live="polite"></div>
       <section id="jazz-refiner" aria-labelledby="jazz-refiner-heading">
         <h3 id="jazz-refiner-heading">Jazz Friendly Refiner · audio composition stage</h3>
-        <p>Preview a selected original recording with a restrained jazz preset. The original FLAC remains unchanged.</p>
+        <p>Choose an original refinement rule for a selected recording. The original FLAC remains unchanged. Experimental rules may change pitch, tempo, duration or playback direction.</p>
         <label for="jazz-refiner-recording">Selected cloud recording</label>
         <select id="jazz-refiner-recording"><option value="">Select music above…</option></select>
         <label for="jazz-refiner-preset">Refinement rule</label>
         <select id="jazz-refiner-preset">
-          <option value="">Original · no refinement</option>
-          <option value="warm_evening">Warm Evening</option>
-          <option value="soft_velvet">Soft Velvet</option>
-          <option value="small_room">Small Room</option>
-          <option value="midnight_mist">Midnight Mist</option>
-        </select>
+        <option value="">Original · no refinement</option>
+        <optgroup label="Jazz Friendly Refiner">
+        <option value="warm_evening" data-description="Subtle warmth, slightly restrained upper-midrange, intact rhythm.">Warm Evening</option>
+        <option value="soft_velvet" data-description="Gentle dynamic control without aggressively flattening attacks.">Soft Velvet</option>
+        <option value="small_room" data-description="Light, short reflections rather than a long echo wash.">Small Room</option>
+        <option value="midnight_mist" data-description="Restrained tonal darkness and spaciousness without pitch or tempo changes.">Midnight Mist</option>
+        </optgroup>
+        <optgroup label="Ambient Mood Lab 01">
+        <option value="lab01_01_darker" data-description="Darker · Warm bass, subdued cymbals and evening shadows.">After Sunset</option>
+        <option value="lab01_02_softer" data-description="Softer · Rounded notes, gentler attacks and a quiet intimacy.">Velvet Morning</option>
+        <option value="lab01_03_spacious" data-description="Spacious · Reflections spread outward into a large imagined room.">The Empty Gallery</option>
+        <option value="lab01_04_mysterious" data-description="Mysterious · Slowly shifting textures and distant echoes.">Behind the Mist</option>
+        </optgroup>
+        <optgroup label="Ambient Mood Lab 02">
+        <option value="lab02_01_deep_water" data-description="DARKER · Lower pitch, slower movement, almost all brightness removed.">Deep Water</option>
+        <option value="lab02_02_behind_curtains" data-description="SOFTER · Music heard through thick fabric; rounded, subdued and intimate.">Behind Curtains</option>
+        <option value="lab02_03_endless_hall" data-description="SPACIOUS · Distinct reflections, wide repetitions and a much larger imagined room.">Endless Hall</option>
+        <option value="lab02_04_reversed_dream" data-description="MYSTERIOUS · The musical phrases run backward through shifting echoes.">Reversed Dream</option>
+        </optgroup>
+        <optgroup label="Ambient Mood Lab 03">
+        <option value="lab03_05_clockwork_garden" data-description="A miniature mechanical orchestra: faster, higher-pitched, bright and strangely playful.">Clockwork Garden</option>
+        <option value="lab03_06_submerged_cathedral" data-description="A cathedral beneath the sea: heavy, slow-moving tones with deep, rolling reflections.">Submerged Cathedral</option>
+        <option value="lab03_07_haunted_transmission" data-description="A damaged night-time radio: narrow frequencies, rhythmic signal loss and spectral echoes.">Haunted Transmission</option>
+        <option value="lab03_08_orbiting_starlight" data-description="Music drifting through a rotating constellation: wide stereo motion, shimmering doubled notes.">Orbiting Starlight</option>
+        </optgroup>
+      </select>
+      <p id="jazz-refiner-description" aria-live="polite"></p>
         <button id="jazz-refiner-preview" type="button" disabled>Listen to 30-second refinement preview</button>
         <audio id="jazz-refiner-player" controls preload="none" style="display:block;width:100%;margin-top:12px"></audio>
         <p id="jazz-refiner-status" role="status" aria-live="polite">
