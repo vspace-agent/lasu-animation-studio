@@ -674,6 +674,109 @@ async function loadProjects() {
   }
 }
 
+
+// Independent visual source selection; never modify the selected GIF order.
+const visualSourceMode = $("#visual-source-mode");
+const coverFileInput = $("#cover-image-file");
+const coverPreview = $("#cover-image-preview");
+const coverStatus = $("#cover-image-status");
+const removeCoverButton = $("#remove-cover-image");
+
+let coverAsset = null;
+let coverObjectURL = null;
+let coverUploadController = null;
+let coverSelectionVersion = 0;
+
+function clearCoverImage() {
+  coverSelectionVersion++;
+  coverUploadController?.abort();
+  coverUploadController = null;
+  coverAsset = null;
+  coverFileInput.value = "";
+  if (coverObjectURL) URL.revokeObjectURL(coverObjectURL);
+  coverObjectURL = null;
+  coverPreview.removeAttribute("src");
+  coverPreview.hidden = true;
+  removeCoverButton.disabled = true;
+  coverStatus.textContent = "";
+  invalidateReview();
+}
+
+visualSourceMode.addEventListener("change", () => {
+  const coverMode = visualSourceMode.value === "cover";
+  $("#cover-image-panel").hidden = !coverMode;
+  $("#gif-visual-panel").hidden = coverMode;
+  invalidateReview();
+});
+
+removeCoverButton.addEventListener("click", clearCoverImage);
+
+coverFileInput.addEventListener("change", async () => {
+  const file = coverFileInput.files?.[0];
+  clearCoverImage();
+  if (!file) return;
+
+  if (!file.size || file.size > 20 * 1024 * 1024) {
+    coverStatus.textContent = "Choose a non-empty image no larger than 20 MiB.";
+    return;
+  }
+
+  const version = coverSelectionVersion;
+  const controller = new AbortController();
+  coverUploadController = controller;
+  removeCoverButton.disabled = false;
+
+  coverObjectURL = URL.createObjectURL(file);
+  coverPreview.onerror = () => {
+    if (version !== coverSelectionVersion) return;
+    coverPreview.hidden = true;
+  };
+  coverPreview.onload = () => {
+    if (version === coverSelectionVersion) coverPreview.hidden = false;
+  };
+  coverPreview.src = coverObjectURL;
+  coverStatus.textContent = "Uploading original image to private Lasu storage…";
+
+  try {
+    const body = new FormData();
+    body.append("image", file, file.name);
+
+    const response = await fetch(`${API}/assets/cover`, {
+      method: "POST",
+      headers: {"Authorization": `Bearer ${token}`},
+      body,
+      signal: controller.signal,
+    });
+
+    const result = await response.json();
+    if (version !== coverSelectionVersion) return;
+
+    if (!response.ok) {
+      throw new Error(typeof result.detail === "string"
+        ? result.detail : `Cover upload failed (HTTP ${response.status}).`);
+    }
+
+    if (!/^images\/covers\/cover_uploads\/[0-9a-f]{64}\.(png|jpg|webp|heic|heif)$/.test(result.path)) {
+      throw new Error("Invalid cover upload receipt.");
+    }
+
+    if (result.size_bytes !== file.size) {
+      throw new Error("Uploaded image size does not match the selected file.");
+    }
+
+    coverAsset = result;
+    coverStatus.textContent =
+      `${file.name} · ${result.width} × ${result.height} · Original uploaded`;
+    invalidateReview();
+  } catch (error) {
+    if (version !== coverSelectionVersion) return;
+    coverAsset = null;
+    coverStatus.textContent = error.message;
+  } finally {
+    if (version === coverSelectionVersion) coverUploadController = null;
+  }
+});
+
 function previewManifest() {
   if ($("#publishing-preset").value === "sft_lm_review") {
     const cuts = LasuAudioReview.selections();
@@ -708,10 +811,16 @@ function previewManifest() {
     .filter((batch) => batch.tracks.length && (!sftMode || batch.route === "sft_lm"));
   const tracks = selectedBatches.flatMap((batch) => batch.tracks);
   if (!tracks.length) throw new Error("Select at least one audio track.");
-  if (!selectedGifPaths.length) throw new Error("Select at least one GIF.");
-  if (selectedGifPaths.some((path) =>
-    !visualAssets.some((asset) => asset.kind === "gif" && asset.path === path)
-  )) throw new Error("The GIF selection no longer matches this project.");
+  const coverMode = visualSourceMode.value === "cover";
+  if (coverMode) {
+    if (coverUploadController) throw new Error("Cover upload is still in progress.");
+    if (!coverAsset) throw new Error("Upload one cover image first.");
+  } else {
+    if (!selectedGifPaths.length) throw new Error("Select at least one GIF.");
+    if (selectedGifPaths.some((path) =>
+      !visualAssets.some((asset) => asset.kind === "gif" && asset.path === path)
+    )) throw new Error("The GIF selection no longer matches this project.");
+  }
   const internalFade = Number($("#internal-fade").value);
   const groupFade = Number($("#group-fade").value);
   if (![internalFade, groupFade].every((value) => Number.isFinite(value) && value > 0 && value <= 10)) {
@@ -736,7 +845,15 @@ function previewManifest() {
         )
       ),
     },
-    visual: {
+    visual: coverMode ? {
+      bucket: "mushroom-house-visual-assets",
+      project: "cover_uploads",
+      kind: "cover",
+      cover_path: coverAsset.path,
+      gif_paths: [],
+      playback: "still_full_audio",
+      timeline: null,
+    } : {
       bucket: "mushroom-house-visual-assets",
       project: projectSelect.value,
       kind: "gif",

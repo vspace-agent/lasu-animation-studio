@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="./library.css?v=0bbbae1">
   <link rel="stylesheet" href="./publish.css?v=youtube-choices-04">
   <script src="./publish_audio_review.js?v=youtube-choices-04" defer></script>
-  <script src="./publish.js?v=youtube-choices-04" defer></script>
+  <script src="./publish.js?v=still-cover-01" defer></script>
 </head>
 <body>
   <div class="background" aria-hidden="true"></div>
@@ -63,6 +63,23 @@
 
     <section class="panel" aria-labelledby="visual-heading">
       <h2 id="visual-heading">02 · Visual project</h2>
+      <label for="visual-source-mode">Visual source</label>
+      <select id="visual-source-mode">
+        <option value="gif">Animation project · GIFs</option>
+        <option value="cover">Single cover image</option>
+      </select>
+      <div id="cover-image-panel" hidden>
+        <label for="cover-image-file">Choose one image from your device or Photo Library</label>
+        <input id="cover-image-file" type="file"
+          accept="image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif">
+        <p>PNG, JPEG, WebP or HEIC/HEIF · up to 20 MiB.</p>
+        <img id="cover-image-preview" alt="Selected cover image"
+          hidden style="max-width:100%;max-height:360px;object-fit:contain">
+        <p id="cover-image-status" role="status" aria-live="polite"></p>
+        <button id="remove-cover-image" type="button" disabled>Remove image</button>
+        <p>The image will remain still throughout the entire audio composition.</p>
+      </div>
+      <div id="gif-visual-panel">
       <label for="visual-project">Lasu cloud project</label>
       <select id="visual-project" disabled><option value="">Choose a project…</option></select>
       <div id="visual-assets" class="publish-items" aria-live="polite"></div>
@@ -76,6 +93,7 @@
         <iframe id="visual-composer-frame" title="Lasu visual composition timeline"
           style="width:100%;height:760px;border:1px solid #777;border-radius:10px;background:#111"></iframe>
         <button id="close-visual-composer" type="button">Close timeline editor</button>
+      </div>
       </div>
     </section>
 
