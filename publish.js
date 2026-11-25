@@ -879,8 +879,11 @@ submitButton.addEventListener("click", async () => {
       throw new Error("Unexpected production submission response.");
     }
     if (reviewedManifestJSON === snapshot) invalidateReview();
-    updateTaskReport("Finished", `Saved to cloud · ID: ${saved.submission_id}. Rendering not started.`);
-    setStatus(`Production saved to cloud · ID: ${saved.submission_id} · Rendering not started.`);
+    productionID.value = saved.submission_id;
+    localStorage.setItem("lasu-reviewed-production-id", saved.submission_id);
+    phase = "Starting reviewed render";
+    updateTaskReport(phase, `Production ${saved.submission_id} saved. Starting cloud rendering.`);
+    await productionAction("render");
   } catch (error) {
     reportSubmissionError(error, phase, error.httpStatus ?? null, error.serverDetail ?? null);
     setStatus(error.message);
@@ -944,7 +947,7 @@ window.addEventListener("message", event => {
     invalidateReview();
     composerStatus.textContent =
       `Draft received (${draft.clips.length} clips). This is a browser-side refinement; ` +
-      "cloud manifest v2 does not yet support custom timeline rendering.";
+      "The timeline will be applied during reviewed cloud rendering.";
   }
 });
 
@@ -1057,3 +1060,130 @@ const jazzObserve = new MutationObserver(() => {
 });
 jazzObserve.observe(audioContainer, { childList: true, subtree: false });
 window.addEventListener("pagehide", stopJazzPreview);
+
+
+/* Reviewed cloud production controls */
+const productionControls = document.createElement("section");
+productionControls.setAttribute("aria-label", "Cloud production");
+productionControls.style.cssText = "display:grid;gap:10px;padding:16px;margin:12px 0;border:1px solid #8886;border-radius:8px";
+
+const productionHeading = document.createElement("h3");
+productionHeading.textContent = "Cloud production";
+productionControls.append(productionHeading);
+
+const productionLabel = document.createElement("label");
+productionLabel.textContent = "Reviewed production ID";
+const productionID = document.createElement("input");
+productionID.type = "text";
+productionID.maxLength = 32;
+productionID.pattern = "[0-9a-f]{32}";
+productionID.value = localStorage.getItem("lasu-reviewed-production-id") || "";
+productionLabel.append(productionID);
+productionControls.append(productionLabel);
+
+const productionActions = document.createElement("div");
+productionActions.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
+function productionButton(label, handler) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", handler);
+  productionActions.append(button);
+  return button;
+}
+
+let productionBusy = false;
+let productionTimer = null;
+let verifiedProductionID = null;
+
+const productionReport = document.createElement("pre");
+productionReport.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere";
+productionReport.setAttribute("aria-live", "polite");
+
+async function productionRequest(action, method, id, body) {
+  const response = await fetch(`${API}/publishing/productions/${id}/${action}`, {
+    method,
+    headers: {...headers(), "Content-Type": "application/json"},
+    ...(body ? {body: JSON.stringify(body)} : {})
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(typeof data.detail === "string" ? data.detail : `Cloud request failed: ${response.status}`);
+  }
+  return data;
+}
+
+async function productionAction(action) {
+  if (productionBusy) return;
+  const id = productionID.value.trim();
+  if (!/^[0-9a-f]{32}$/.test(id)) {
+    productionReport.textContent = "Enter a valid reviewed production ID.";
+    return;
+  }
+
+  clearTimeout(productionTimer);
+  productionBusy = true;
+  productionPublish.disabled = true;
+  productionRender.disabled = true;
+  productionRefresh.disabled = true;
+
+  try {
+    if (action === "publish") {
+      if (verifiedProductionID !== id) throw new Error("Refresh and verify render status before publishing.");
+      if (!window.confirm("Publish this reviewed video to its selected YouTube channel and playlist, using the saved visibility settings?")) return;
+    }
+
+    localStorage.setItem("lasu-reviewed-production-id", id);
+    const data = await productionRequest(
+      action, action === "status" ? "GET" : "POST", id,
+      action === "publish" ? {approve_youtube_publish: true} : null
+    );
+
+    if (productionID.value.trim() !== id) return;
+
+    verifiedProductionID = data.render_ready ? id : null;
+    productionReport.textContent = [
+      `Production: ${id}`,
+      `Rendering: ${data.render}`,
+      `Render ready: ${data.render_ready ? "Yes" : "No"}`,
+      `YouTube job: ${data.publish}`,
+      `YouTube status: ${data.youtube_status}`,
+      ...(data.video_id ? [`YouTube video: https://www.youtube.com/watch?v=${data.video_id}`] : [])
+    ].join("\n");
+
+    const ready = data.render_ready === true;
+    productionRender.disabled = data.render !== "not_started";
+    productionPublish.disabled = !ready || data.publish !== "not_started";
+    setStatus(ready ? "Reviewed video rendered." : `Cloud render: ${data.render}`);
+
+    if (data.render === "running" || data.publish === "running") {
+      productionTimer = setTimeout(() => productionAction("status"), 15000);
+    }
+  } catch (error) {
+    verifiedProductionID = null;
+    productionReport.textContent = `${error.message}\nRefresh status before attempting another operation.`;
+    setStatus(error.message);
+  } finally {
+    productionBusy = false;
+    productionRefresh.disabled = false;
+  }
+}
+
+const productionRefresh = productionButton("Refresh status", () => productionAction("status"));
+const productionRender = productionButton("Start reviewed render", () => productionAction("render"));
+const productionPublish = productionButton("Publish to YouTube", () => productionAction("publish"));
+productionRender.disabled = true;
+productionPublish.disabled = true;
+
+productionID.addEventListener("input", () => {
+  clearTimeout(productionTimer);
+  verifiedProductionID = null;
+  productionRender.disabled = true;
+  productionPublish.disabled = true;
+  productionReport.textContent = "Refresh status for this production.";
+});
+
+productionControls.append(productionActions, productionReport);
+taskPanel.insertAdjacentElement("afterend", productionControls);
+
+if (/^[0-9a-f]{32}$/.test(productionID.value)) productionAction("status");
