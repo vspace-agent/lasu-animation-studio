@@ -11,6 +11,10 @@ const visualContainer = $("#visual-assets");
 const reviewButton = $("#review-manifest");
 const submitButton = $("#submit-production");
 let reviewedManifestJSON = null;
+let activeProductionID = localStorage.getItem("lasu-active-automation") || "";
+let automationTimer = null;
+let automationStatusBusy = false;
+let submissionUnconfirmed = localStorage.getItem("lasu-submission-unconfirmed") === "true";
 let submissionInProgress = false;
 
 function invalidateReview() {
@@ -452,7 +456,7 @@ function renderAudio() {
     }
     audioContainer.append(group);
   }
-  reviewButton.disabled = false;
+  reviewButton.disabled = Boolean(activeProductionID) || submissionInProgress || submissionUnconfirmed;
   refreshPublicationDescription();
 }
 
@@ -819,80 +823,64 @@ projectSelect.addEventListener("change", async () => {
     setStatus(error.message);
   }
 });
-reviewButton.addEventListener("click", () => {
-  if (submissionInProgress) return;
-  invalidateReview();
-  try {
-    reviewedManifestJSON = JSON.stringify(previewManifest());
-    $("#manifest-preview").textContent = JSON.stringify(
-      JSON.parse(reviewedManifestJSON), null, 2
-    );
-    submitButton.disabled = false;
-    setStatus("Manifest reviewed. Save to cloud only if every selection and publication field is correct.");
-  } catch (error) {
-    setStatus(error.message);
-  }
-});
 
-submitButton.addEventListener("click", async () => {
-  if (submissionInProgress) return;
-  if (!reviewedManifestJSON) {
-    setStatus("Review the production manifest before submitting.");
+reviewButton.addEventListener("click", async () => {
+  if (submissionInProgress || submissionUnconfirmed) return;
+  if (activeProductionID) {
+    await monitorProduction();
     return;
   }
 
-  const snapshot = reviewedManifestJSON;
+  let manifest;
   try {
-    if (JSON.stringify(previewManifest()) !== snapshot) {
-      throw new Error("Production settings changed after review. Review again before saving.");
-    }
+    manifest = previewManifest();
   } catch (error) {
-    invalidateReview();
     setStatus(error.message);
     return;
   }
 
   submissionInProgress = true;
-  submitButton.disabled = true;
+  submissionUnconfirmed = true;
+  localStorage.setItem("lasu-submission-unconfirmed", "true");
   reviewButton.disabled = true;
-  setStatus("Saving reviewed production to private cloud storage…");
-  lastPublishError = "";
   taskPanel.open = true;
-  let phase = "Uploading request";
-  updateTaskReport(phase, "Sending the reviewed manifest to Lasu Cloud.");
+  lastPublishError = "";
+  updateTaskReport("Starting automation", "Saving production and starting cloud publishing.");
 
   try {
-    const saved = await submitReviewedManifest(
-      snapshot,
-      (percent) => {
-        if (phase === "Uploading request") {
-          updateTaskReport(phase, "Sending the reviewed manifest to Lasu Cloud.", percent);
-        }
-      },
-      (stage, message) => {
-        phase = stage;
-        updateTaskReport(stage, message);
+    const response = await fetch(`${API}/publishing/automated-productions`, {
+      method: "POST",
+      headers: {...headers(), "Content-Type": "application/json"},
+      body: JSON.stringify({manifest, approve_youtube_publish: true})
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      if ([400, 401, 403, 422].includes(response.status)) {
+        submissionUnconfirmed = false;
+        localStorage.removeItem("lasu-submission-unconfirmed");
       }
-    );
-    if (!/^[0-9a-f]{32}$/.test(saved.submission_id) ||
-        saved.status !== "reviewed_not_started") {
-      throw new Error("Unexpected production submission response.");
+      throw new Error(typeof result.detail === "string" ? result.detail : `Cloud request failed: ${response.status}`);
     }
-    if (reviewedManifestJSON === snapshot) invalidateReview();
-    productionID.value = saved.submission_id;
-    localStorage.setItem("lasu-reviewed-production-id", saved.submission_id);
-    phase = "Starting reviewed render";
-    updateTaskReport(phase, `Production ${saved.submission_id} saved. Starting cloud rendering.`);
-    await productionAction("render");
+    if (!/^[0-9a-f]{32}$/.test(result.submission_id)) {
+      throw new Error("Production submission could not be confirmed.");
+    }
+
+    activeProductionID = result.submission_id;
+    localStorage.setItem("lasu-active-automation", activeProductionID);
+    submissionUnconfirmed = false;
+    localStorage.removeItem("lasu-submission-unconfirmed");
+    await monitorProduction();
   } catch (error) {
-    reportSubmissionError(error, phase, error.httpStatus ?? null, error.serverDetail ?? null);
-    setStatus(error.message);
-    if (reviewedManifestJSON === snapshot) submitButton.disabled = false;
+    reportSubmissionError(error, "Starting automation", null, null);
+    setStatus(error.message + " — Verify cloud status before submitting again.");
   } finally {
     submissionInProgress = false;
-    reviewButton.disabled = !audioContainer.querySelector(".audio-track-selection");
+    reviewButton.disabled = Boolean(activeProductionID) || submissionUnconfirmed || !audioContainer.querySelector(".audio-track-selection");
   }
 });
+
 
 
 async function initialize() {
@@ -905,7 +893,14 @@ async function initialize() {
     await Promise.all([loadAudio(), loadProjects(), loadYoutubeDestinations()]);
     refreshPublicationDescription();
     $("#publish-auth").textContent = "Private cloud access enabled.";
-    setStatus("Choose the recordings and visual, then review the production manifest.");
+    if (activeProductionID) {
+      await monitorProduction();
+    } else if (submissionUnconfirmed) {
+      reviewButton.disabled = true;
+      setStatus("Previous submission outcome is unconfirmed. Do not submit a duplicate.");
+    } else {
+      setStatus("Choose audio, visual and publication settings, then click Publish to YouTube.");
+    }
   } catch (error) {
     $("#publish-auth").textContent = error.message;
     setStatus("Could not load private cloud assets.");
@@ -1062,128 +1057,63 @@ jazzObserve.observe(audioContainer, { childList: true, subtree: false });
 window.addEventListener("pagehide", stopJazzPreview);
 
 
-/* Reviewed cloud production controls */
-const productionControls = document.createElement("section");
-productionControls.setAttribute("aria-label", "Cloud production");
-productionControls.style.cssText = "display:grid;gap:10px;padding:16px;margin:12px 0;border:1px solid #8886;border-radius:8px";
 
-const productionHeading = document.createElement("h3");
-productionHeading.textContent = "Cloud production";
-productionControls.append(productionHeading);
 
-const productionLabel = document.createElement("label");
-productionLabel.textContent = "Reviewed production ID";
-const productionID = document.createElement("input");
-productionID.type = "text";
-productionID.maxLength = 32;
-productionID.pattern = "[0-9a-f]{32}";
-productionID.value = localStorage.getItem("lasu-reviewed-production-id") || "";
-productionLabel.append(productionID);
-productionControls.append(productionLabel);
 
-const productionActions = document.createElement("div");
-productionActions.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
-function productionButton(label, handler) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = label;
-  button.addEventListener("click", handler);
-  productionActions.append(button);
-  return button;
-}
 
-let productionBusy = false;
-let productionTimer = null;
-let verifiedProductionID = null;
 
-const productionReport = document.createElement("pre");
-productionReport.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere";
-productionReport.setAttribute("aria-live", "polite");
-
-async function productionRequest(action, method, id, body) {
-  const response = await fetch(`${API}/publishing/productions/${id}/${action}`, {
-    method,
-    headers: {...headers(), "Content-Type": "application/json"},
-    ...(body ? {body: JSON.stringify(body)} : {})
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(typeof data.detail === "string" ? data.detail : `Cloud request failed: ${response.status}`);
-  }
-  return data;
-}
-
-async function productionAction(action) {
-  if (productionBusy) return;
-  const id = productionID.value.trim();
-  if (!/^[0-9a-f]{32}$/.test(id)) {
-    productionReport.textContent = "Enter a valid reviewed production ID.";
-    return;
-  }
-
-  clearTimeout(productionTimer);
-  productionBusy = true;
-  productionPublish.disabled = true;
-  productionRender.disabled = true;
-  productionRefresh.disabled = true;
+async function monitorProduction() {
+  if (!/^[0-9a-f]{32}$/.test(activeProductionID) || automationStatusBusy) return;
+  clearTimeout(automationTimer);
+  automationStatusBusy = true;
+  reviewButton.disabled = true;
+  taskPanel.open = true;
 
   try {
-    if (action === "publish") {
-      if (verifiedProductionID !== id) throw new Error("Refresh and verify render status before publishing.");
-      if (!window.confirm("Publish this reviewed video to its selected YouTube channel and playlist, using the saved visibility settings?")) return;
+    const response = await fetch(`${API}/publishing/productions/${activeProductionID}/status`, {
+      headers: headers()
+    });
+    if (!response.ok) throw new Error(`Cloud status unavailable: ${response.status}`);
+    const data = await response.json();
+
+    if (data.completed) {
+      updateTaskReport("Completed", `YouTube publication verified. Temporary video cleaned up. Production: ${activeProductionID}`);
+      setStatus(`Published: ${data.youtube_url}`);
+      const link = document.createElement("a");
+      link.href = data.youtube_url;
+      link.textContent = "Watch published video on YouTube";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      $("#publish-status").append(document.createTextNode(" "), link);
+
+      localStorage.removeItem("lasu-active-automation");
+      activeProductionID = "";
+      reviewButton.disabled = !audioContainer.querySelector(".audio-track-selection");
+      return;
     }
 
-    localStorage.setItem("lasu-reviewed-production-id", id);
-    const data = await productionRequest(
-      action, action === "status" ? "GET" : "POST", id,
-      action === "publish" ? {approve_youtube_publish: true} : null
-    );
-
-    if (productionID.value.trim() !== id) return;
-
-    verifiedProductionID = data.render_ready ? id : null;
-    productionReport.textContent = [
-      `Production: ${id}`,
-      `Rendering: ${data.render}`,
-      `Render ready: ${data.render_ready ? "Yes" : "No"}`,
-      `YouTube job: ${data.publish}`,
-      `YouTube status: ${data.youtube_status}`,
-      ...(data.video_id ? [`YouTube video: https://www.youtube.com/watch?v=${data.video_id}`] : [])
-    ].join("\n");
-
-    const ready = data.render_ready === true;
-    productionRender.disabled = data.render !== "not_started";
-    productionPublish.disabled = !ready || data.publish !== "not_started";
-    setStatus(ready ? "Reviewed video rendered." : `Cloud render: ${data.render}`);
-
-    if (data.render === "running" || data.publish === "running") {
-      productionTimer = setTimeout(() => productionAction("status"), 15000);
+    if (["failed", "dispatch_rejected", "dispatching", "dispatch_unconfirmed"].includes(data.automation)) {
+      updateTaskReport("Attention required", `Cloud automation: ${data.automation}. Production: ${activeProductionID}. Do not submit a duplicate.`);
+      setStatus("Production requires reconciliation. Existing production ID retained.");
+      if (data.automation === "failed" || data.automation === "dispatch_rejected") return;
+    } else if (data.youtube_status === "published_verified") {
+      updateTaskReport("Cleanup", "Publication verified. Removing temporary rendered media.");
+    } else if (data.video_id) {
+      updateTaskReport("YouTube verification", "Waiting for YouTube processing and playlist verification.");
+    } else if (data.youtube_status === "upload_started") {
+      updateTaskReport("Uploading", "Uploading rendered video to YouTube.");
+    } else if (data.render_ready) {
+      updateTaskReport("Publishing", "Render complete. Preparing YouTube upload.");
+    } else {
+      updateTaskReport("Rendering", `Cloud production: ${activeProductionID}. Applying audio refinements and rendering the selected timeline.`);
     }
+
+    automationTimer = setTimeout(monitorProduction, 15000);
   } catch (error) {
-    verifiedProductionID = null;
-    productionReport.textContent = `${error.message}\nRefresh status before attempting another operation.`;
-    setStatus(error.message);
+    setStatus(error.message + " — Status monitoring will retry automatically.");
+    automationTimer = setTimeout(monitorProduction, 30000);
   } finally {
-    productionBusy = false;
-    productionRefresh.disabled = false;
+    automationStatusBusy = false;
   }
 }
 
-const productionRefresh = productionButton("Refresh status", () => productionAction("status"));
-const productionRender = productionButton("Start reviewed render", () => productionAction("render"));
-const productionPublish = productionButton("Publish to YouTube", () => productionAction("publish"));
-productionRender.disabled = true;
-productionPublish.disabled = true;
-
-productionID.addEventListener("input", () => {
-  clearTimeout(productionTimer);
-  verifiedProductionID = null;
-  productionRender.disabled = true;
-  productionPublish.disabled = true;
-  productionReport.textContent = "Refresh status for this production.";
-});
-
-productionControls.append(productionActions, productionReport);
-taskPanel.insertAdjacentElement("afterend", productionControls);
-
-if (/^[0-9a-f]{32}$/.test(productionID.value)) productionAction("status");
