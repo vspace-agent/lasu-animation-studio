@@ -25,7 +25,7 @@ function invalidateReview() {
 
 const reviewInputIds = new Set([
   "audio-batch", "visual-project", "publishing-preset",
-  "trim-boundaries", "internal-fade", "group-fade", "jazz-refiner-preset", "jazz-refiner-recording",
+  "trim-boundaries", "internal-fade", "group-fade", "jazz-refiner-preset",
   "video-title", "video-description", "publication-public",
   "youtube-channel", "youtube-playlist"
 ]);
@@ -200,16 +200,15 @@ function routeLabel(route) {
 
 // Build audience-facing copy from the original story and music prompts; never invent chapter times.
 function generatePublicationDescription() {
-  const chosen = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
-  const keys = new Set(chosen.map((input) => `${input.dataset.batchId}/${input.dataset.trackName}`));
-  const selectedRuns = batches.filter((batch) => themeKey(batch) === batchSelect.value)
-    .map((batch) => ({
-      ...batch,
-      tracks: batch.tracks.filter((track) => keys.has(`${batch.id}/${track.name}`)),
-    })).filter((batch) => batch.tracks.length);
-  if (!selectedRuns.length) return "";
-
-  const story = selectedRuns.map((batch) => batch.story?.trim()).find(Boolean);
+  const matching = batches.filter(batch => themeKey(batch) === batchSelect.value);
+  if (!matching.length) return "";
+  const selectedRuns = selectedAudioBatches().map(selection => {
+    const source = matching.find(batch =>
+      batch.id === selection.id && batch.route === selection.route
+    );
+    return { ...source, tracks: selection.tracks };
+  });
+  const story = matching.map(batch => batch.story?.trim()).find(Boolean);
   if ($("#publishing-preset").value === "sft_lm_review") return story || "";
   const descriptions = selectedRuns.flatMap((batch) =>
     batch.tracks.map((track) => batch.music_prompts?.[track.name]?.trim()).filter(Boolean)
@@ -238,22 +237,12 @@ function generatePublicationDescription() {
   return lines.join("\n");
 }
 
+
 function publicationSourceWarnings() {
-  const chosen = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
-  const keys = new Set(chosen.map((input) => `${input.dataset.batchId}/${input.dataset.trackName}`));
-  const runs = batches.filter((batch) => themeKey(batch) === batchSelect.value)
-    .filter((batch) => batch.tracks.some((track) =>
-      keys.has(`${batch.id}/${track.name}`)));
-  const missing = [];
-  if (runs.length && !runs.some((batch) => batch.story?.trim())) {
-    missing.push("Original batch story unavailable from the audio API.");
-  }
-  if ($("#publishing-preset").value !== "sft_lm_review" &&
-      runs.length && !runs.some((batch) => batch.tracks.some((track) =>
-      keys.has(`${batch.id}/${track.name}`) && batch.music_prompts?.[track.name]?.trim()))) {
-    missing.push("Original music prompts unavailable from the audio API.");
-  }
-  return missing;
+  const runs = batches.filter(batch => themeKey(batch) === batchSelect.value);
+  return runs.length && !runs.some(batch => batch.story?.trim())
+    ? ["Original batch story unavailable from the audio API."]
+    : [];
 }
 
 // Public destination options are verified metadata; uploading additionally requires matching channel OAuth.
@@ -336,127 +325,98 @@ function refreshPublicationDescription(force = false) {
 $("#video-description").addEventListener("input", () => { descriptionEdited = true; });
 $("#regenerate-description").addEventListener("click", () => refreshPublicationDescription(true));
 
+
+function selectedAudioBatches() {
+  const mode = $("#publishing-preset").value;
+  const route = mode === "sft_lm_review" ? "sft_lm"
+    : mode === "turbo_long_listen" ? "turbo" : null;
+  const keys = new Set(
+    [...audioContainer.querySelectorAll(".audio-track-selection:checked")]
+      .map(input => JSON.stringify([
+        input.dataset.batchId, input.dataset.route, input.dataset.trackName
+      ]))
+  );
+  return batches
+    .filter(batch => themeKey(batch) === batchSelect.value)
+    .filter(batch => route ? batch.route === route : ["turbo", "sft_lm"].includes(batch.route))
+    .map(batch => ({
+      id: batch.id,
+      route: batch.route,
+      tracks: batch.tracks
+        .filter(track => track.name !== "track_01_batch_story")
+        .filter(track => route || keys.has(JSON.stringify([
+          batch.id, batch.route, track.name
+        ])))
+        .map(track => ({
+          name: track.name,
+          recordings: track.recordings.map(recording => recording.path)
+        }))
+        .filter(track => track.recordings.length)
+    }))
+    .filter(batch => batch.tracks.length);
+}
+
+function updateAudioCount() {
+  const count = selectedAudioBatches().reduce(
+    (sum, batch) => sum + batch.tracks.reduce(
+      (total, track) => total + track.recordings.length, 0
+    ), 0
+  );
+  const summary = $("#selected-audio-count");
+  if (summary) summary.textContent = `${count} recordings`;
+}
+
 function renderAudio() {
-  LasuAudioReview.reset();
   invalidateReview();
   audioContainer.replaceChildren();
-  const matching = batches.filter((batch) => themeKey(batch) === batchSelect.value);
-  if (!matching.length) {
-    reviewButton.disabled = true;
-    return;
-  }
 
-  const totalTracks = matching.reduce((sum, batch) => sum + batch.tracks.length, 0);
-  const totalRecordings = matching.reduce((sum, batch) => sum + batch.recording_count, 0);
   const summary = document.createElement("p");
-  summary.textContent = `${matching.length} generation runs · ${totalTracks} tracks · ${totalRecordings} recordings`;
+  summary.id = "selected-audio-count";
   audioContainer.append(summary);
 
-  const sftReview = $("#publishing-preset").value === "sft_lm_review";
-  if (sftReview) {
-    LasuAudioReview.makeToolbar(
-      audioContainer, API, token,
-      () => {
-        for (const input of audioContainer.querySelectorAll(".audio-track-selection")) {
-          if (input.dataset.batchId !== undefined) {
-            const corresponding = [...audioContainer.querySelectorAll(".sft-recording-selection")]
-              .filter((take) =>
-                take.dataset.batchId === input.dataset.batchId &&
-                take.dataset.trackName === input.dataset.trackName
-              );
-            if (corresponding.length) input.checked = corresponding.some((take) => take.checked);
-          }
-        }
-        invalidateReview();
-        refreshPublicationDescription();
-      },
-      setStatus
-    );
-  }
-
-  const routes = ["turbo", "sft_lm", ...new Set(matching.map((batch) => batch.route))];
-  for (const route of [...new Set(routes)]) {
-    const runs = matching.filter((batch) => batch.route === route);
-    if (!runs.length || (sftReview && route !== "sft_lm")) continue;
-    const group = document.createElement("details");
-    group.className = "publish-model-group";
-    group.open = sftReview;
-    const heading = document.createElement("summary");
-    const modelRecordings = runs.reduce((sum, batch) => sum + batch.recording_count, 0);
-    heading.textContent = `${routeLabel(route)} · ${runs.length} runs · ${modelRecordings} recordings`;
-    group.append(heading);
-
-    const controls = document.createElement("div");
-    controls.className = "publish-model-controls";
-    for (const [label, checked] of [["Select all music", true], ["Clear selection", false]]) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = label;
-      button.addEventListener("click", () => {
-        for (const input of group.querySelectorAll(".audio-track-selection")) {
-          input.checked = checked && !input.dataset.trackName.startsWith("track_01_");
-        }
-        for (const entry of group.querySelectorAll(".sft-recording-selection")) {
-          entry.checked = checked;
-        }
-        if (!sftReview) $("#publishing-preset").value = "manual";
-        $("#manifest-preview").textContent = "";
-        refreshPublicationDescription();
-        setStatus("Audio selection changed. Review the manifest again.");
-      });
-      controls.append(button);
-    }
-    group.append(controls);
-
-    for (const batch of runs) {
-      const run = document.createElement("details");
-      run.className = "publish-generation-run";
-      run.open = sftReview;
-      const runTitle = document.createElement("summary");
-      runTitle.textContent = `Run ${batch.id.replace("studio_batch_", "").slice(0, 8)} · ${batch.recording_count} recordings`;
-      run.append(runTitle);
+  if ($("#publishing-preset").value === "manual") {
+    for (const batch of batches.filter(batch =>
+      themeKey(batch) === batchSelect.value &&
+      ["turbo", "sft_lm"].includes(batch.route)
+    )) {
+      const group = document.createElement("details");
+      const heading = document.createElement("summary");
+      heading.textContent = routeLabel(batch.route);
+      group.append(heading);
 
       for (const track of batch.tracks) {
+        if (track.name === "track_01_batch_story") continue;
         const label = document.createElement("label");
         label.className = "publish-track";
         const check = document.createElement("input");
         check.type = "checkbox";
         check.className = "audio-track-selection";
         check.dataset.batchId = batch.id;
+        check.dataset.route = batch.route;
         check.dataset.trackName = track.name;
-        check.checked = sftReview
-          ? batch.route === "sft_lm" && track.name !== "track_01_batch_story"
-          : $("#publishing-preset").value === "turbo_long_listen"
-            ? batch.route === "turbo" && track.name !== "track_01_batch_story"
-            : false;
-        const description = document.createElement("span");
-        description.textContent = `${track.name.replace(/^track_\\d+_/, "").replaceAll("_", " ")} · ${track.recordings.length} recording(s)`;
-        label.append(check, description);
+
+        const title = document.createElement("span");
+        title.textContent = `${track.name.replace(/^track_\d+_/, "").replaceAll("_", " ")} · ${track.recordings.length}`;
+        label.append(check, title);
+        group.append(label);
+
         check.addEventListener("change", () => {
-          if (!sftReview) $("#publishing-preset").value = "manual";
-          $("#manifest-preview").textContent = "";
+          if (check.checked) {
+            for (const other of audioContainer.querySelectorAll(".audio-track-selection")) {
+              if (other.dataset.route !== check.dataset.route) other.checked = false;
+            }
+          }
+          updateAudioCount();
           refreshPublicationDescription();
         });
-        run.append(label);
-        if (sftReview && batch.route === "sft_lm" && !/^track_01_/.test(track.name)) {
-          const recordings = document.createElement("div");
-          recordings.className = "sft-recordings";
-          for (const recording of track.recordings) {
-            LasuAudioReview.addRecording(recordings, batch, track, recording);
-          }
-          run.append(recordings);
-          check.addEventListener("change", () => {
-            for (const entry of recordings.querySelectorAll(".sft-recording-selection")) {
-              entry.checked = check.checked;
-            }
-          });
-        }
       }
-      group.append(run);
+      audioContainer.append(group);
     }
-    audioContainer.append(group);
   }
-  reviewButton.disabled = Boolean(activeProductionID) || submissionInProgress || submissionUnconfirmed;
+
+  updateAudioCount();
+  reviewButton.disabled = Boolean(activeProductionID) ||
+    submissionInProgress || submissionUnconfirmed || !selectedAudioBatches().length;
   refreshPublicationDescription();
 }
 
@@ -474,8 +434,7 @@ async function loadAudio() {
     const name = runs[0].theme
       ? runs[0].theme.replaceAll("_", " ")
       : `Untitled batch · ${runs[0].id.replace("studio_batch_", "").slice(0, 8)}`;
-    const count = runs.reduce((sum, batch) => sum + batch.recording_count, 0);
-    batchSelect.add(new Option(`${name} · ${runs.length} runs · ${count} recordings`, key));
+    batchSelect.add(new Option(name, key));
   }
   batchSelect.disabled = themes.size === 0;
   if (themes.size) {
@@ -777,38 +736,9 @@ coverFileInput.addEventListener("change", async () => {
   }
 });
 
+
 function previewManifest() {
-  if ($("#publishing-preset").value === "sft_lm_review") {
-    const cuts = LasuAudioReview.selections();
-    if (cuts.some((cut) => cut.start_seconds !== 0 || cut.end_seconds !== null)) {
-      throw new Error("Trim previews are ready; saving trim settings requires the SFT+LM composition backend.");
-    }
-  }
-  const selected = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
-  const sftMode = $("#publishing-preset").value === "sft_lm_review";
-  const takePaths = sftMode
-    ? new Set(LasuAudioReview.selections().map((entry) => entry.path))
-    : null;
-  const selectedKeys = new Set(
-    selected.map((input) => `${input.dataset.batchId}/${input.dataset.trackName}`)
-  );
-  const selectedBatches = batches
-    .filter((batch) => themeKey(batch) === batchSelect.value)
-    .map((batch) => ({
-      id: batch.id,
-      route: batch.route,
-      tracks: batch.tracks
-        .filter((track) => selectedKeys.has(`${batch.id}/${track.name}`))
-        .map((track) => ({
-          name: track.name,
-          recordings: sftMode
-            ? track.recordings.filter((recording) => takePaths.has(recording.path))
-                .map((recording) => recording.path)
-            : track.recordings.map((recording) => recording.path),
-        }))
-        .filter((track) => track.recordings.length > 0),
-    }))
-    .filter((batch) => batch.tracks.length && (!sftMode || batch.route === "sft_lm"));
+  const selectedBatches = selectedAudioBatches();
   const tracks = selectedBatches.flatMap((batch) => batch.tracks);
   if (!tracks.length) throw new Error("Select at least one audio track.");
   const coverMode = visualSourceMode.value === "cover";
@@ -840,9 +770,11 @@ function previewManifest() {
       theme: batches.find((batch) => themeKey(batch) === batchSelect.value)?.theme || null,
       batches: selectedBatches,
       refinements: Object.fromEntries(
-        [...jazzRefinements.entries()].filter(([path]) =>
-          selectedBatches.some(batch => batch.tracks.some(track => track.recordings.includes(path)))
-        )
+        jazzPreset.value
+          ? selectedBatches.flatMap(batch => batch.tracks.flatMap(track =>
+              track.recordings.map(path => [path, jazzPreset.value])
+            ))
+          : []
       ),
     },
     visual: coverMode ? {
@@ -994,7 +926,7 @@ reviewButton.addEventListener("click", async () => {
     setStatus(error.message + " — Verify cloud status before submitting again.");
   } finally {
     submissionInProgress = false;
-    reviewButton.disabled = Boolean(activeProductionID) || submissionUnconfirmed || !audioContainer.querySelector(".audio-track-selection");
+    reviewButton.disabled = Boolean(activeProductionID) || submissionUnconfirmed || !selectedAudioBatches().length;
   }
 });
 
@@ -1063,127 +995,11 @@ window.addEventListener("message", event => {
   }
 });
 
-// Jazz Refiner is part of the existing audio collection, not a second importer.
-const jazzRefinements = new Map();
-const jazzRecording = $("#jazz-refiner-recording");
+// Apply one selected Mood Lab rule to the current composition.
 const jazzPreset = $("#jazz-refiner-preset");
-const jazzDescription = $("#jazz-refiner-description");
-const jazzRuleIDs = new Set(
-  Array.from(jazzPreset.options, option => option.value).filter(Boolean)
-);
-function updateJazzDescription() {
-  const option = jazzPreset.selectedOptions[0];
-  jazzDescription.textContent = option?.dataset.description || "";
-}
+jazzPreset.addEventListener("change", invalidateReview);
 
-const jazzPreview = $("#jazz-refiner-preview");
-const jazzPlayer = $("#jazz-refiner-player");
-const jazzStatus = $("#jazz-refiner-status");
-let jazzPreviewURL = null;
-let jazzPreviewController = null;
 
-function selectedJazzRecordingPaths() {
-  const checked = [...audioContainer.querySelectorAll(".audio-track-selection:checked")];
-  const sft = $("#publishing-preset").value === "sft_lm_review";
-  const included = new Set(checked.map(input =>
-    `${input.dataset.batchId}/${input.dataset.trackName}`));
-  const selectedTakes = sft
-    ? new Set([...audioContainer.querySelectorAll(".sft-recording-selection:checked")]
-        .map(input => input.dataset.path))
-    : null;
-  return batches.filter(batch => themeKey(batch) === batchSelect.value)
-    .filter(batch => !sft || batch.route === "sft_lm")
-    .flatMap(batch => batch.tracks
-      .filter(track => included.has(`${batch.id}/${track.name}`))
-      .flatMap(track => track.recordings.map(recording => recording.path)
-        .filter(path => !selectedTakes || selectedTakes.has(path))));
-}
-
-function stopJazzPreview() {
-  jazzPreviewController?.abort();
-  jazzPreviewController = null;
-  jazzPlayer.pause();
-  jazzPlayer.removeAttribute("src");
-  jazzPlayer.load();
-  if (jazzPreviewURL) URL.revokeObjectURL(jazzPreviewURL);
-  jazzPreviewURL = null;
-}
-
-function refreshJazzRefiner() {
-  const previous = jazzRecording.value;
-  const paths = [...new Set(selectedJazzRecordingPaths())];
-  jazzRecording.replaceChildren(new Option("Choose selected recording…", ""));
-  for (const path of paths) jazzRecording.add(new Option(path.split("/").pop(), path));
-  if (paths.includes(previous)) jazzRecording.value = previous;
-  jazzPreset.value = jazzRefinements.get(jazzRecording.value) || "";
-  updateJazzDescription();
-  jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
-  if (!paths.length) jazzStatus.textContent = "Select a cloud music track first.";
-}
-
-jazzRecording.addEventListener("change", () => {
-  stopJazzPreview();
-  jazzPreset.value = jazzRefinements.get(jazzRecording.value) || "";
-  updateJazzDescription();
-  jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
-});
-jazzPreset.addEventListener("change", () => {
-  updateJazzDescription();
-  stopJazzPreview();
-  if (jazzRecording.value && selectedJazzRecordingPaths().includes(jazzRecording.value)) {
-    if (jazzPreset.value) jazzRefinements.set(jazzRecording.value, jazzPreset.value);
-    else jazzRefinements.delete(jazzRecording.value);
-  }
-  invalidateReview();
-  jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
-  jazzStatus.textContent = jazzPreset.value
-    ? "Refinement rule selected; preview before approving."
-    : "Original recording selected; no refinement.";
-});
-jazzPreview.addEventListener("click", async () => {
-  if (!selectedJazzRecordingPaths().includes(jazzRecording.value) ||
-      !jazzRuleIDs.has(jazzPreset.value)) {
-    jazzStatus.textContent = "Choose a currently selected recording and jazz preset.";
-    return;
-  }
-  stopJazzPreview();
-  const controller = new AbortController();
-  jazzPreviewController = controller;
-  jazzPreview.disabled = true;
-  jazzStatus.textContent = "Rendering temporary 30-second preview…";
-  try {
-    const response = await fetch(
-      `${API}/audio/refiner/preview?${new URLSearchParams({
-        path: jazzRecording.value, preset: jazzPreset.value
-      })}`, { headers: headers(), signal: controller.signal, cache: "no-store" });
-    if (!response.ok) throw new Error(`Jazz preview HTTP ${response.status}`);
-    const blob = await response.blob();
-    if (controller.signal.aborted) return;
-    jazzPreviewURL = URL.createObjectURL(blob);
-    jazzPlayer.src = jazzPreviewURL;
-    jazzStatus.textContent = "Preview ready. Original cloud recording is unchanged.";
-    await jazzPlayer.play().catch(() => {});
-  } catch (error) {
-    if (error.name !== "AbortError")
-      jazzStatus.textContent = `Refinement unavailable: ${error.message}`;
-  } finally {
-    if (jazzPreviewController === controller) {
-      jazzPreviewController = null;
-      jazzPreview.disabled = !jazzRecording.value || !jazzPreset.value;
-    }
-  }
-});
-
-audioContainer.addEventListener("change", () => {
-  stopJazzPreview();
-  refreshJazzRefiner();
-});
-const jazzObserve = new MutationObserver(() => {
-  if (!audioContainer.querySelector(".audio-track-selection")) return;
-  refreshJazzRefiner();
-});
-jazzObserve.observe(audioContainer, { childList: true, subtree: false });
-window.addEventListener("pagehide", stopJazzPreview);
 
 
 
@@ -1217,7 +1033,7 @@ async function monitorProduction() {
 
       localStorage.removeItem("lasu-active-automation");
       activeProductionID = "";
-      reviewButton.disabled = !audioContainer.querySelector(".audio-track-selection");
+      reviewButton.disabled = !selectedAudioBatches().length;
       return;
     }
 
