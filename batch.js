@@ -17,7 +17,7 @@ function batchMessage(message) {
 function batchUpdateSelection() {
   const selected = batchItems.filter((item) => item.selected);
   batchCount.textContent = `${selected.length} of ${batchItems.length} animations selected`;
-  batchSaveButton.disabled = batchSaving || selected.length === 0;
+  batchSaveButton.disabled = batchSaving || batchSubmissionBlocked() || selected.length === 0;
   for (const item of batchItems) {
     item.card.classList.toggle("batch-selected", item.selected);
   }
@@ -169,8 +169,8 @@ requestAnimationFrame(batchTick);
 batchInput.addEventListener("change", async () => {
   const files = Array.from(batchInput.files || []);
   if (!files.length) return;
-  if (files.length > 10) {
-    batchMessage("Choose no more than 10 sprite sheets.");
+  if (files.length > 15) {
+    batchMessage("Choose no more than 15 sprite sheets.");
     batchInput.value = "";
     return;
   }
@@ -190,7 +190,7 @@ batchInput.addEventListener("change", async () => {
         image.naturalHeight < 4 ||
         image.naturalWidth * image.naturalHeight > 4_000_000) ||
         images.reduce((sum, image) =>
-          sum + image.naturalWidth * image.naturalHeight, 0) > 20_000_000) {
+          sum + image.naturalWidth * image.naturalHeight, 0) > 60_000_000) {
       throw new Error("Image dimensions exceed the supported batch limits.");
     }
     const items = images.map((image, index) => ({
@@ -229,104 +229,300 @@ document.querySelector("#batch-select-none").addEventListener("click", () => {
   batchUpdateSelection();
 });
 
+
 const LASU_BACKGROUND_JOB_KEY = "lasu-background-job";
+const LASU_BATCH_STATE_KEY = "lasu-sequential-batch-v1";
+const BATCH_GROUP_SIZE = 5;
 const batchJobsURL = API_URL.slice(0, -"/animate".length) + "/jobs";
 let batchPollTimer = null;
+let batchPolling = false;
+let batchStorageBlocked = false;
 
-async function batchPollJob(jobId) {
-  if (!deviceToken) return;
+function batchReadState() {
+  const raw = localStorage.getItem(LASU_BATCH_STATE_KEY);
+  if (!raw) return null;
+  const state = JSON.parse(raw);
+  if (!state || !Array.isArray(state.jobs)) {
+    throw new Error("Invalid stored batch record.");
+  }
+  return state;
+}
+
+function batchSubmissionBlocked() {
+  if (batchStorageBlocked) return true;
   try {
-    const response = await fetch(`${batchJobsURL}/${encodeURIComponent(jobId)}`, {
-      headers: {Authorization: `Bearer ${deviceToken}`},
-      cache: "no-store"
-    });
-    if (!response.ok) throw new Error(`Status unavailable (${response.status})`);
-    const job = await response.json();
-    const results = job.results || [];
-    const running = results.filter((state) => state === "running").length;
-    const failed = results.filter((state) => state === "failed").length;
-    const retrying = results.filter((state) => state === "retrying").length;
-    batchMessage(
-      `Cloud job: ${job.completed}/${job.total} saved · ` +
-      `${running} running · ${retrying} retrying · ${failed} failed. ` +
-      (job.status === "completed"
-        ? "All animations are in Cloud Library."
-        : "Processing continues even if this browser closes.")
-    );
-    if (job.status === "completed" || results.every(
-      (state) => state === "completed" || state === "failed"
-    )) {
-      clearInterval(batchPollTimer);
-      batchPollTimer = null;
-      localStorage.removeItem(LASU_BACKGROUND_JOB_KEY);
-      await refreshProjects();
-    }
-  } catch (error) {
-    batchMessage(`Cloud job ${jobId.slice(0, 8)}: ${error.message}. Will check again.`);
+    const state = batchReadState();
+    return Boolean(state && state.stage !== "completed");
+  } catch {
+    return true;
   }
 }
 
-function batchWatchJob(jobId) {
-  if (batchPollTimer) clearInterval(batchPollTimer);
-  localStorage.setItem(LASU_BACKGROUND_JOB_KEY, jobId);
-  batchPollJob(jobId);
-  batchPollTimer = setInterval(() => batchPollJob(jobId), 5000);
+function batchPersist(state) {
+  localStorage.setItem(LASU_BATCH_STATE_KEY, JSON.stringify(state));
 }
 
-const previousBatchJob = localStorage.getItem(LASU_BACKGROUND_JOB_KEY);
-if (previousBatchJob && /^[0-9a-f]{32}$/.test(previousBatchJob)) {
-  batchWatchJob(previousBatchJob);
+function batchStartPolling() {
+  if (batchPollTimer) clearInterval(batchPollTimer);
+  batchPollTimer = setInterval(batchPollJobs, 5000);
+  batchPollJobs();
+}
+
+async function batchPollJobs() {
+  if (batchPolling || batchSaving || !deviceToken) return;
+  batchPolling = true;
+  try {
+    const state = batchReadState();
+    if (!state || state.stage === "completed" || !state.jobs.length) return;
+
+    const jobs = await Promise.all(state.jobs.map(async entry => {
+      const response = await fetch(
+        `${batchJobsURL}/${encodeURIComponent(entry.id)}`,
+        {
+          headers: {Authorization: `Bearer ${deviceToken}`},
+          cache: "no-store"
+        }
+      );
+      if (!response.ok) {
+        throw new Error(`Status unavailable (${response.status})`);
+      }
+      return response.json();
+    }));
+
+    const completed = jobs.reduce((n, j) => n + Number(j.completed || 0), 0);
+    const results = jobs.flatMap(j => j.results || []);
+    const running = results.filter(s => s === "running").length;
+    const retrying = results.filter(s => s === "retrying").length;
+    const failed = results.filter(s => s === "failed").length;
+    const accepted = state.jobs.reduce((n, j) => n + j.count, 0);
+    const terminal = jobs.every((j, i) =>
+      Array.isArray(j.results) &&
+      j.results.length === state.jobs[i].count &&
+      j.results.every(s => s === "completed" || s === "failed")
+    );
+
+    state.completed = completed;
+    state.failed = failed;
+
+    const summary = `Cloud batch: ${completed}/${state.total} saved · ` +
+      `${accepted} accepted · ${running} running · ` +
+      `${retrying} retrying · ${failed} failed.`;
+
+    if (state.stage === "inspection_required") {
+      batchMessage(`${summary} ${state.error} Do not resubmit.`);
+    } else if (terminal) {
+      state.stage = completed === state.total && failed === 0
+        ? "completed" : "inspection_required";
+      if (state.stage === "completed") {
+        batchMessage(`${summary} All animations are in Cloud Library.`);
+      } else {
+        state.error = "Incomplete cloud batch; inspect before retrying.";
+        batchMessage(`${summary} ${state.error}`);
+      }
+    } else {
+      batchMessage(`${summary} Processing continues if this browser closes.`);
+    }
+
+    batchPersist(state);
+
+    if (terminal) {
+      clearInterval(batchPollTimer);
+      batchPollTimer = null;
+      await refreshProjects();
+    }
+  } catch (error) {
+    batchMessage(`Cloud batch status: ${error.message}. Will check again.`);
+  } finally {
+    batchPolling = false;
+    batchUpdateSelection();
+  }
+}
+
+try {
+  let state = batchReadState();
+  const legacy = localStorage.getItem(LASU_BACKGROUND_JOB_KEY);
+  const recoveryRaw = localStorage.getItem("lasu-nine-sheet-recovery-v1");
+  if (!state && recoveryRaw) {
+    const recovery = JSON.parse(recoveryRaw);
+    if (recovery.stage === "completed" &&
+        recovery.completed === recovery.total &&
+        recovery.failed === 0) {
+      state = {
+        ...recovery,
+        version: 1,
+        stage: "completed"
+      };
+      batchPersist(state);
+    } else {
+      batchStorageBlocked = true;
+      batchMessage("An earlier recovery requires verification before submitting another batch.");
+    }
+  }
+  if (legacy && /^[0-9a-f]{32}$/.test(legacy)) {
+    batchStorageBlocked = true;
+    batchMessage("Checking earlier cloud job…");
+    const checkLegacy = async () => {
+      if (!deviceToken) return;
+      try {
+        const response = await fetch(
+          `${batchJobsURL}/${encodeURIComponent(legacy)}`,
+          {
+            headers: {Authorization: `Bearer ${deviceToken}`},
+            cache: "no-store"
+          }
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const job = await response.json();
+        if (job.status === "completed" &&
+            job.completed === job.total &&
+            Array.isArray(job.results) &&
+            job.results.length === job.total &&
+            job.results.every(s => s === "completed")) {
+          localStorage.removeItem(LASU_BACKGROUND_JOB_KEY);
+          if (!recoveryRaw || JSON.parse(recoveryRaw).stage === "completed") {
+            batchStorageBlocked = false;
+          }
+          clearInterval(legacyTimer);
+          batchMessage("Earlier cloud job verified complete.");
+          await refreshProjects();
+        } else {
+          batchMessage(`Earlier cloud job: ${job.completed}/${job.total} saved. New submissions remain blocked.`);
+        }
+      } catch (error) {
+        batchMessage(`Earlier cloud job verification: ${error.message}`);
+      } finally {
+        batchUpdateSelection();
+      }
+    };
+    const legacyTimer = setInterval(checkLegacy, 5000);
+    checkLegacy();
+  }
+  if (state && state.stage === "submitting") {
+    state.stage = "inspection_required";
+    state.error = "Submission interrupted; acceptance must be checked before retrying.";
+    batchPersist(state);
+  }
+  if (state && state.stage !== "completed") {
+    if (state.jobs.length) batchStartPolling();
+    else batchMessage(state.error || "Unconfirmed submission; inspect before retrying.");
+  }
+} catch (error) {
+  batchStorageBlocked = true;
+  batchMessage(`Stored batch state unavailable: ${error.message}`);
 }
 
 batchSaveButton.addEventListener("click", async () => {
-  if (batchSaving) return;
-  const selected = batchItems.filter((item) => item.selected);
+  if (batchSaving || batchSubmissionBlocked()) return;
+  const selected = batchItems.filter(item => item.selected);
   if (!selected.length) {
     batchMessage("Select at least one animation.");
     return;
   }
   if (!deviceToken) {
-    batchMessage("Pair this device above the project selector before saving to GCS.");
+    batchMessage("Pair this device before saving to GCS.");
     return;
   }
   const project = selectedProject();
   if (!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(project || "")) {
-    batchMessage("Choose or create a destination project directly above Save selected → GCS.");
+    batchMessage("Choose or create a destination project.");
     return;
   }
+
   const format = document.querySelector("#batch-format").value;
+  const items = selected.map(item => ({
+    file: item.file,
+    settings: {
+      format,
+      duration_ms: item.duration,
+      excluded: item.frames.filter(frame => frame.excluded).map(frame => frame.number)
+    }
+  }));
+
+  const state = {
+    version: 1,
+    project,
+    total: items.length,
+    stage: "submitting",
+    jobs: [],
+    started: new Date().toISOString()
+  };
+
   batchSaving = true;
   batchInput.disabled = true;
   batchUpdateSelection();
+
   try {
-    const body = new FormData();
-    const settings = selected.map((item) => ({
-      format,
-      duration_ms: item.duration,
-      excluded: item.frames.filter((frame) => frame.excluded).map((frame) => frame.number)
-    }));
-    for (const item of selected) body.append("sheets", item.file, item.file.name);
-    body.append("settings", JSON.stringify(settings));
-    body.append("project", project);
-    batchMessage(`Uploading ${selected.length} sprite sheets to Cloud Tasks… Keep this tab open until accepted.`);
-    const response = await fetch(batchJobsURL, {
-      method: "POST",
-      headers: {Authorization: `Bearer ${deviceToken}`},
-      body
-    });
-    if (!response.ok) {
-      const message = await response.text();
-      throw new Error(`Submission failed (${response.status}): ${message.slice(0, 200)}`);
+    batchPersist(state);
+
+    for (let offset = 0; offset < items.length; offset += BATCH_GROUP_SIZE) {
+      const group = items.slice(offset, offset + BATCH_GROUP_SIZE);
+      const bytes = group.reduce((n, item) => n + item.file.size, 0);
+      if (bytes > 25 * 1024 * 1024) {
+        throw new Error("Upload group exceeds the safe request size.");
+      }
+
+      const body = new FormData();
+      group.forEach(item => body.append("sheets", item.file, item.file.name));
+      body.append("settings", JSON.stringify(group.map(item => item.settings)));
+      body.append("project", project);
+
+      state.pendingOffset = offset;
+      batchPersist(state);
+
+      batchMessage(
+        `Uploading animations ${offset + 1}–${offset + group.length} ` +
+        `of ${items.length}. Keep this tab open until all groups are accepted.`
+      );
+
+      const response = await fetch(batchJobsURL, {
+        method: "POST",
+        headers: {Authorization: `Bearer ${deviceToken}`},
+        body
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`Submission failed (${response.status}): ${message.slice(0, 200)}`);
+      }
+
+      const job = await response.json();
+
+      if (!/^[0-9a-f]{32}$/.test(job.id || "")) {
+        throw new Error("Unconfirmed cloud job identity.");
+      }
+
+      state.jobs.push({id: job.id, count: group.length, offset});
+      delete state.pendingOffset;
+      batchPersist(state);
+
+      if (job.total !== group.length ||
+          job.queued !== group.length ||
+          job.status !== "queued") {
+        throw new Error("Cloud job only partially accepted.");
+      }
     }
-    const job = await response.json();
+
+    state.stage = "accepted";
+    batchPersist(state);
     localStorage.setItem(LAST_PROJECT_KEY, project);
-    batchMessage(`${job.total} animations queued. You may now close this tab or let your Mac sleep.`);
-    batchWatchJob(job.id);
+
+    batchMessage(
+      `${items.length} animations queued in ${state.jobs.length} cloud jobs. ` +
+      "You may now close this tab or let your Mac sleep."
+    );
   } catch (error) {
-    batchMessage(error.message);
+    state.stage = "inspection_required";
+    state.error = error.message;
+    try {
+      batchPersist(state);
+    } catch {
+      batchStorageBlocked = true;
+    }
+    batchMessage(`Submission paused: ${error.message}. Do not resubmit.`);
   } finally {
     batchSaving = false;
     batchInput.disabled = false;
     batchUpdateSelection();
+    if (state.jobs.length) batchStartPolling();
   }
 });
