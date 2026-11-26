@@ -199,17 +199,17 @@ function routeLabel(route) {
 }
 
 // Build audience-facing copy from the original story and music prompts; never invent chapter times.
-function generatePublicationDescription() {
+function generatePublicationDescription(model = selectedModel()) {
   const matching = batches.filter(batch => themeKey(batch) === batchSelect.value);
   if (!matching.length) return "";
-  const selectedRuns = selectedAudioBatches().map(selection => {
+  const selectedRuns = selectedAudioBatches(model).map(selection => {
     const source = matching.find(batch =>
       batch.id === selection.id && batch.route === selection.route
     );
     return { ...source, tracks: selection.tracks };
   });
   const story = matching.map(batch => batch.story?.trim()).find(Boolean);
-  if ($("#publishing-preset").value === "sft_lm_review") return story || "";
+  if (model === "sft_lm") return story || "";
   const descriptions = selectedRuns.flatMap((batch) =>
     batch.tracks.map((track) => batch.music_prompts?.[track.name]?.trim()).filter(Boolean)
   );
@@ -269,6 +269,7 @@ function refreshPlaylistChoices(preferred = "") {
   const requested = preferred || (channel?.id === DEFAULT_CHANNEL ? DEFAULT_PLAYLISTS[model] : "");
   youtubePlaylist.value = channel?.playlists.some((item) => item.id === requested) ? requested : "";
   updateDestinationNotice();
+  updateSequentialSummary();
 }
 function updateDestinationNotice() {
   const channel = youtubeCatalog?.channels.find((item) => item.id === youtubeChannel.value);
@@ -326,27 +327,26 @@ $("#video-description").addEventListener("input", () => { descriptionEdited = tr
 $("#regenerate-description").addEventListener("click", () => refreshPublicationDescription(true));
 
 
-function selectedAudioBatches() {
-  const mode = $("#publishing-preset").value;
-  const route = mode === "sft_lm_review" ? "sft_lm"
-    : mode === "turbo_long_listen" ? "turbo" : null;
-  const keys = new Set(
-    [...audioContainer.querySelectorAll(".audio-track-selection:checked")]
-      .map(input => JSON.stringify([
-        input.dataset.batchId, input.dataset.route, input.dataset.trackName
-      ]))
-  );
+function bothMode() {
+  return $("#publishing-preset").value === "both";
+}
+
+function selectedModel() {
+  return $("#publishing-preset").value === "sft_lm_review"
+    ? "sft_lm" : "turbo";
+}
+
+function selectedAudioBatches(route = bothMode() ? null : selectedModel()) {
   return batches
     .filter(batch => themeKey(batch) === batchSelect.value)
-    .filter(batch => route ? batch.route === route : ["turbo", "sft_lm"].includes(batch.route))
+    .filter(batch => route
+      ? batch.route === route
+      : ["turbo", "sft_lm"].includes(batch.route))
     .map(batch => ({
       id: batch.id,
       route: batch.route,
       tracks: batch.tracks
         .filter(track => track.name !== "track_01_batch_story")
-        .filter(track => route || keys.has(JSON.stringify([
-          batch.id, batch.route, track.name
-        ])))
         .map(track => ({
           name: track.name,
           recordings: track.recordings.map(recording => recording.path)
@@ -356,14 +356,65 @@ function selectedAudioBatches() {
     .filter(batch => batch.tracks.length);
 }
 
-function updateAudioCount() {
-  const count = selectedAudioBatches().reduce(
+function recordingCount(route) {
+  return selectedAudioBatches(route).reduce(
     (sum, batch) => sum + batch.tracks.reduce(
       (total, track) => total + track.recordings.length, 0
     ), 0
   );
+}
+
+function trackCount(route) {
+  return new Set(selectedAudioBatches(route)
+    .flatMap(batch => batch.tracks.map(track => track.name))).size;
+}
+
+function audioSelectionReady() {
+  return bothMode()
+    ? trackCount("turbo") >= 3 && trackCount("sft_lm") >= 3
+    : trackCount(selectedModel()) >= 3;
+}
+
+function batchThemeTitle() {
+  const theme = batches.find(batch =>
+    themeKey(batch) === batchSelect.value)?.theme || "";
+  return theme.replaceAll("_", " ");
+}
+
+function defaultPlaylist(route) {
+  return youtubeCatalog?.channels
+    .find(channel => channel.id === DEFAULT_CHANNEL)?.playlists
+    .find(playlist => playlist.id === DEFAULT_PLAYLISTS[route]);
+}
+
+function updateSequentialSummary() {
+  const both = bothMode();
+  const summary = $("#sequential-publication-summary");
+
+  $("#publication-title-label").textContent = both
+    ? "Turbo video title" : "Video title";
+  youtubePlaylist.disabled = both;
+  summary.hidden = !both;
+
+  if (both) {
+    summary.textContent =
+      `1. Turbo → ${defaultPlaylist("turbo")?.title || "Default playlist unavailable"} · ` +
+      `2. SFT+LM → ${defaultPlaylist("sft_lm")?.title || "Default playlist unavailable"} · ` +
+      `SFT+LM title: ${batchThemeTitle() || "Choose a batch theme"}`;
+  }
+}
+
+function updateAudioCount() {
   const summary = $("#selected-audio-count");
-  if (summary) summary.textContent = `${count} recordings`;
+  if (!summary) return;
+
+  summary.textContent = bothMode()
+    ? `Turbo · ${recordingCount("turbo")} recordings | SFT+LM · ${recordingCount("sft_lm")} recordings`
+    : `${routeLabel(selectedModel())} · ${recordingCount(selectedModel())} recordings`;
+
+  if (!audioSelectionReady()) {
+    summary.textContent += " · At least three musical tracks required per publication.";
+  }
 }
 
 function renderAudio() {
@@ -374,49 +425,10 @@ function renderAudio() {
   summary.id = "selected-audio-count";
   audioContainer.append(summary);
 
-  if ($("#publishing-preset").value === "manual") {
-    for (const batch of batches.filter(batch =>
-      themeKey(batch) === batchSelect.value &&
-      ["turbo", "sft_lm"].includes(batch.route)
-    )) {
-      const group = document.createElement("details");
-      const heading = document.createElement("summary");
-      heading.textContent = routeLabel(batch.route);
-      group.append(heading);
-
-      for (const track of batch.tracks) {
-        if (track.name === "track_01_batch_story") continue;
-        const label = document.createElement("label");
-        label.className = "publish-track";
-        const check = document.createElement("input");
-        check.type = "checkbox";
-        check.className = "audio-track-selection";
-        check.dataset.batchId = batch.id;
-        check.dataset.route = batch.route;
-        check.dataset.trackName = track.name;
-
-        const title = document.createElement("span");
-        title.textContent = `${track.name.replace(/^track_\d+_/, "").replaceAll("_", " ")} · ${track.recordings.length}`;
-        label.append(check, title);
-        group.append(label);
-
-        check.addEventListener("change", () => {
-          if (check.checked) {
-            for (const other of audioContainer.querySelectorAll(".audio-track-selection")) {
-              if (other.dataset.route !== check.dataset.route) other.checked = false;
-            }
-          }
-          updateAudioCount();
-          refreshPublicationDescription();
-        });
-      }
-      audioContainer.append(group);
-    }
-  }
-
   updateAudioCount();
+  updateSequentialSummary();
   reviewButton.disabled = Boolean(activeProductionID) ||
-    submissionInProgress || submissionUnconfirmed || !selectedAudioBatches().length;
+    submissionInProgress || submissionUnconfirmed || !audioSelectionReady();
   refreshPublicationDescription();
 }
 
@@ -737,10 +749,12 @@ coverFileInput.addEventListener("change", async () => {
 });
 
 
-function previewManifest() {
-  const selectedBatches = selectedAudioBatches();
+function previewManifest(model = selectedModel()) {
+  const selectedBatches = selectedAudioBatches(model);
   const tracks = selectedBatches.flatMap((batch) => batch.tracks);
-  if (!tracks.length) throw new Error("Select at least one audio track.");
+  if (new Set(tracks.map(track => track.name)).size < 3) {
+    throw new Error("Each publication requires at least three musical tracks.");
+  }
   const coverMode = visualSourceMode.value === "cover";
   if (coverMode) {
     if (coverUploadController) throw new Error("Cover upload is still in progress.");
@@ -756,11 +770,14 @@ function previewManifest() {
   if (![internalFade, groupFade].every((value) => Number.isFinite(value) && value > 0 && value <= 10)) {
     throw new Error("Crossfade durations must be greater than 0 and at most 10 seconds.");
   }
-  if (!chosenPlaylist()) throw new Error("Choose a verified YouTube playlist.");
+  const playlist = bothMode() ? defaultPlaylist(model) : chosenPlaylist();
+  if (!playlist) throw new Error("The verified YouTube playlist is unavailable.");
   if (youtubeChannel.value !== DEFAULT_CHANNEL) {
     throw new Error("Asopo zala is verified, but cloud publishing authorization is not connected yet.");
   }
-  const title = $("#video-title").value.trim();
+  const title = bothMode() && model === "sft_lm"
+    ? batchThemeTitle()
+    : $("#video-title").value.trim();
   if (!title || title.length > 100) throw new Error("Enter a YouTube title (up to 100 characters).");
 
   return {
@@ -801,10 +818,12 @@ function previewManifest() {
     publication: {
       channel: youtubeCatalog?.channels.find((item) => item.id === youtubeChannel.value)?.title || "",
       channel_id: youtubeChannel.value,
-      playlist: chosenPlaylist()?.title || "",
-      playlist_id: youtubePlaylist.value,
+      playlist: playlist.title,
+      playlist_id: playlist.id,
       title,
-      description: $("#video-description").value,
+      description: bothMode() && model === "sft_lm"
+        ? generatePublicationDescription("sft_lm")
+        : $("#video-description").value,
       visibility: $("#publication-public").checked ? "public" : "private",
     },
   };
@@ -880,9 +899,14 @@ reviewButton.addEventListener("click", async () => {
     return;
   }
 
-  let manifest;
+  let submission;
   try {
-    manifest = previewManifest();
+    submission = bothMode()
+      ? {
+          mode: "both",
+          manifests: [previewManifest("turbo"), previewManifest("sft_lm")]
+        }
+      : {manifest: previewManifest()};
   } catch (error) {
     setStatus(error.message);
     return;
@@ -900,7 +924,7 @@ reviewButton.addEventListener("click", async () => {
     const response = await fetch(`${API}/publishing/automated-productions`, {
       method: "POST",
       headers: {...headers(), "Content-Type": "application/json"},
-      body: JSON.stringify({manifest, approve_youtube_publish: true})
+      body: JSON.stringify({...submission, approve_youtube_publish: true})
     });
 
     const result = await response.json();
@@ -926,7 +950,7 @@ reviewButton.addEventListener("click", async () => {
     setStatus(error.message + " — Verify cloud status before submitting again.");
   } finally {
     submissionInProgress = false;
-    reviewButton.disabled = Boolean(activeProductionID) || submissionUnconfirmed || !selectedAudioBatches().length;
+    reviewButton.disabled = Boolean(activeProductionID) || submissionUnconfirmed || !audioSelectionReady();
   }
 });
 
@@ -1021,6 +1045,28 @@ async function monitorProduction() {
     if (!response.ok) throw new Error(`Cloud status unavailable: ${response.status}`);
     const data = await response.json();
 
+    const sequential = data.kind === "sequential_publication";
+    const sequenceLabel = sequential
+      ? `Publication ${data.current_index} of 2 · ${routeLabel(data.current_model)} · `
+      : "";
+
+    if (data.completed && sequential) {
+      updateTaskReport("Completed", "Both YouTube publications verified; temporary media cleaned up.");
+      setStatus("Both publications completed.");
+      for (const item of data.youtube_urls || []) {
+        const link = document.createElement("a");
+        link.href = item.url;
+        link.textContent = `Watch ${routeLabel(item.model)}`;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        $("#publish-status").append(document.createTextNode(" · "), link);
+      }
+      localStorage.removeItem("lasu-active-automation");
+      activeProductionID = "";
+      reviewButton.disabled = !audioSelectionReady();
+      return;
+    }
+
     if (data.completed) {
       updateTaskReport("Completed", `YouTube publication verified. Temporary video cleaned up. Production: ${activeProductionID}`);
       setStatus(`Published: ${data.youtube_url}`);
@@ -1033,7 +1079,7 @@ async function monitorProduction() {
 
       localStorage.removeItem("lasu-active-automation");
       activeProductionID = "";
-      reviewButton.disabled = !selectedAudioBatches().length;
+      reviewButton.disabled = !audioSelectionReady();
       return;
     }
 
@@ -1094,12 +1140,22 @@ async function monitorProduction() {
     }
 
     detail += ` Production: ${activeProductionID}.`;
-    updateTaskReport(label, detail, percent);
+    updateTaskReport(sequenceLabel + label, detail, percent);
 
     if (stage === "failed") {
-      setStatus("Production requires attention. Existing production ID retained for recovery.");
+      setStatus(sequenceLabel + "Production requires attention. Existing production ID retained for recovery.");
+      if (sequential) {
+        for (const item of data.youtube_urls || []) {
+          const link = document.createElement("a");
+          link.href = item.url;
+          link.textContent = `Completed ${routeLabel(item.model)}`;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          $("#publish-status").append(document.createTextNode(" · "), link);
+        }
+      }
     } else {
-      setStatus(label + (percent === null ? "" : ` · ${percent.toFixed(1)}%`));
+      setStatus(sequenceLabel + label + (percent === null ? "" : ` · ${percent.toFixed(1)}%`));
     }
 
     automationTimer = setTimeout(monitorProduction, 15000);

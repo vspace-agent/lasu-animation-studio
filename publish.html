@@ -35,7 +35,7 @@
       <select id="publishing-preset">
         <option value="turbo_long_listen">Turbo long listen</option>
           <option value="sft_lm_review">SFT+LM</option>
-        <option value="manual">Manual selection</option>
+        <option value="both">Both · Sequential publication</option>
       </select>
       <div id="audio-tracks" class="publish-items" aria-live="polite"></div>
       <section id="jazz-refiner" aria-labelledby="jazz-refiner-heading">
@@ -119,7 +119,8 @@
       <label>YouTube channel <select id="youtube-channel"></select></label>
       <label>Playlist <select id="youtube-playlist"></select></label>
       <p id="publication-destination" role="status"></p>
-      <label>Video title <input id="video-title" type="text" maxlength="100" autocomplete="off"></label>
+      <p id="sequential-publication-summary" hidden></p>
+      <label><span id="publication-title-label">Video title</span> <input id="video-title" type="text" maxlength="100" autocomplete="off"></label>
       <label>Description · generated from selected batch data
         <textarea id="video-description" rows="9" aria-describedby="description-note"></textarea>
       </label>
