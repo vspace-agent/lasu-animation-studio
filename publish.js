@@ -1037,43 +1037,69 @@ async function monitorProduction() {
       return;
     }
 
-    // A separately dispatched publication can recover a failed automation.
-    const recoveryActive = ["running", "completed", "dispatched"].includes(data.publish);
-    const statusStages = recoveryActive
-      ? ["publish"]
-      : ["publish", "automation", "render"];
-    const failedStage = statusStages.find(
-      stage => ["failed", "dispatch_rejected"].includes(data[stage])
-    );
+    const progress = data.progress || {};
+    const stages = {
+      not_started: ["Not started", "Cloud execution has not started."],
+      queued: ["Queued", "Production accepted. Waiting for the cloud worker."],
+      preparing: ["Preparing", "Loading the reviewed audio and visual sources."],
+      refining_audio: ["Refining audio", "Applying the selected audio refinement rule."],
+      composing_audio: ["Composing audio", "Joining the selected recordings and creating chapters."],
+      rendering: ["Rendering", "Rendering the reviewed video timeline."],
+      staging_video: ["Saving render", "Saving the rendered video and composition metadata."],
+      render_ready: ["Render ready", "The reviewed render is ready for publication."],
+      preparing_publication: ["Preparing publication", "Checking the rendered video and YouTube destination."],
+      uploading: ["Uploading", "Uploading the rendered video to YouTube."],
+      verifying: ["Verifying YouTube", "Checking video processing and playlist placement."],
+      cleanup: ["Cleanup", "Publication verified. Removing temporary rendered media."],
+      running: ["Running", "Cloud execution confirmed. Detailed progress is not available."],
+      failed: ["Attention required", "Cloud production reported a failure. Do not submit a duplicate."],
+      status_unavailable: ["Awaiting confirmation", "No current worker checkpoint is available. Monitoring will continue."]
+    };
 
-    if (failedStage) {
-      updateTaskReport(
-        "Attention required",
-        `Cloud ${failedStage} failed. Production: ${activeProductionID}. Do not submit a duplicate.`
-      );
-      setStatus("Production failed. Existing production ID retained for recovery.");
-      return;
+    // Retain compatibility with the previous API during deployment.
+    let stage = progress.stage;
+    if (!stage) {
+      if ([data.render, data.publish, data.automation].includes("failed") ||
+          [data.render, data.publish, data.automation].includes("dispatch_rejected")) {
+        stage = "failed";
+      } else if (data.youtube_status === "published_verified") {
+        stage = "cleanup";
+      } else if (data.video_id) {
+        stage = "verifying";
+      } else if (data.youtube_status === "upload_started") {
+        stage = "uploading";
+      } else if (data.render_ready) {
+        stage = "preparing_publication";
+      } else if ([data.render, data.publish, data.automation].includes("running")) {
+        stage = "running";
+      } else {
+        stage = "status_unavailable";
+      }
     }
 
-    const activeCloudStatus = recoveryActive ? data.publish : data.automation;
+    const [label, description] = stages[stage] || stages.status_unavailable;
+    const percent = stage === "uploading" &&
+      typeof progress.percent === "number" &&
+      Number.isFinite(progress.percent) &&
+      progress.percent >= 0 && progress.percent <= 100
+        ? progress.percent
+        : null;
 
-    if (["dispatching", "dispatch_unconfirmed", "operation_unavailable"].includes(activeCloudStatus)
-        && !data.video_id && data.youtube_status !== "upload_started") {
-      updateTaskReport(
-        "Status unavailable",
-        `Cloud execution: ${activeCloudStatus}. Production: ${activeProductionID}.`
-      );
-      setStatus("Cloud execution state is not confirmed. Monitoring will continue.");
-    } else if (data.youtube_status === "published_verified") {
-      updateTaskReport("Cleanup", "Publication verified. Removing temporary rendered media.");
-    } else if (data.video_id) {
-      updateTaskReport("YouTube verification", "Waiting for YouTube processing and playlist verification.");
-    } else if (data.youtube_status === "upload_started") {
-      updateTaskReport("Uploading", "Uploading rendered video to YouTube.");
-    } else if (data.render_ready) {
-      updateTaskReport("Publishing", "Render complete. Preparing YouTube upload.");
+    let detail = description;
+    if (progress.updated_at) {
+      const updated = new Date(progress.updated_at);
+      if (!Number.isNaN(updated.getTime())) {
+        detail += ` Last worker checkpoint: ${updated.toLocaleTimeString()}.`;
+      }
+    }
+
+    detail += ` Production: ${activeProductionID}.`;
+    updateTaskReport(label, detail, percent);
+
+    if (stage === "failed") {
+      setStatus("Production requires attention. Existing production ID retained for recovery.");
     } else {
-      updateTaskReport("Rendering", `Cloud production: ${activeProductionID}. Applying audio refinements and rendering the selected timeline.`);
+      setStatus(label + (percent === null ? "" : ` · ${percent.toFixed(1)}%`));
     }
 
     automationTimer = setTimeout(monitorProduction, 15000);
