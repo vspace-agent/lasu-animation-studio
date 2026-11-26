@@ -1221,10 +1221,33 @@ async function monitorProduction() {
       return;
     }
 
-    if (["failed", "dispatch_rejected", "dispatching", "dispatch_unconfirmed"].includes(data.automation)) {
-      updateTaskReport("Attention required", `Cloud automation: ${data.automation}. Production: ${activeProductionID}. Do not submit a duplicate.`);
-      setStatus("Production requires reconciliation. Existing production ID retained.");
-      if (data.automation === "failed" || data.automation === "dispatch_rejected") return;
+    // A separately dispatched publication can recover a failed automation.
+    const recoveryActive = ["running", "completed", "dispatched"].includes(data.publish);
+    const statusStages = recoveryActive
+      ? ["publish"]
+      : ["publish", "automation", "render"];
+    const failedStage = statusStages.find(
+      stage => ["failed", "dispatch_rejected"].includes(data[stage])
+    );
+
+    if (failedStage) {
+      updateTaskReport(
+        "Attention required",
+        `Cloud ${failedStage} failed. Production: ${activeProductionID}. Do not submit a duplicate.`
+      );
+      setStatus("Production failed. Existing production ID retained for recovery.");
+      return;
+    }
+
+    const activeCloudStatus = recoveryActive ? data.publish : data.automation;
+
+    if (["dispatching", "dispatch_unconfirmed", "operation_unavailable"].includes(activeCloudStatus)
+        && !data.video_id && data.youtube_status !== "upload_started") {
+      updateTaskReport(
+        "Status unavailable",
+        `Cloud execution: ${activeCloudStatus}. Production: ${activeProductionID}.`
+      );
+      setStatus("Cloud execution state is not confirmed. Monitoring will continue.");
     } else if (data.youtube_status === "published_verified") {
       updateTaskReport("Cleanup", "Publication verified. Removing temporary rendered media.");
     } else if (data.video_id) {
