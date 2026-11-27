@@ -1,3 +1,4 @@
+(() => {
 // Browse authenticated GCS assets and share multiple selected files with the device.
 "use strict";
 
@@ -11,7 +12,17 @@ const allButton = document.querySelector("#select-all");
 const clearButton = document.querySelector("#clear-selection");
 const moveDestination = document.querySelector("#move-destination");
 const moveButton = document.querySelector("#move-selected");
+const categorySelect = document.querySelector("#library-category");
+const cleanupButton = document.querySelector("#cleanup-workspace");
+const cleanupReview = document.querySelector("#cleanup-review");
+const cleanupProjects = document.querySelector("#cleanup-projects");
+const cleanupConfirm = document.querySelector("#cleanup-confirm");
+const cleanupCancel = document.querySelector("#cleanup-cancel");
+
 let moving = false;
+let cleaning = false;
+let loadSequence = 0;
+let cleanupCandidates = [];
 
 let assets = [];
 let selected = new Set();
@@ -22,7 +33,7 @@ function message(value) { status.textContent = value; }
 function headers() { return { Authorization: `Bearer ${token}` }; }
 function updateSelection() {
   saveButton.disabled = selected.size === 0 || [...selected].some(path => !assetBlobs.has(path));
-  moveButton.disabled = moving || selected.size === 0 ||
+  moveButton.disabled = moving || cleaning || selected.size === 0 ||
     !moveDestination.value || moveDestination.value === projectSelect.value;
   moveButton.textContent = `Move Selected (${selected.size})`;
 
@@ -59,6 +70,7 @@ function resetGrid() {
   updateSelection();
 }
 async function loadAssets() {
+  const sequence = ++loadSequence;
   resetGrid();
   const project = projectSelect.value;
   if (!project) return;
@@ -67,7 +79,10 @@ async function loadAssets() {
     const response = await fetch(`${API}/assets?${new URLSearchParams({ project })}`, { headers: headers() });
     if (!response.ok) throw new Error(`Library lookup failed (${response.status}).`);
     const payload = await response.json();
-    assets = payload.assets;
+    if (sequence !== loadSequence) return;
+    assets = payload.assets.filter(asset =>
+      !categorySelect.value || asset.kind === categorySelect.value
+    );
     for (const asset of assets) {
       const card = document.createElement("label");
       card.className = "library-card";
@@ -102,12 +117,12 @@ async function loadAssets() {
     updateSelection();
     message(`${assets.length} file(s) in ${project}.`);
     for (const asset of assets) {
-      if (projectSelect.value !== project) break;
+      if (sequence !== loadSequence || projectSelect.value !== project) break;
       const card = Array.from(grid.children).find(node => node.dataset.path === asset.path);
       if (!card) continue;
       try {
         const blob = await fetchAsset(asset);
-        if (projectSelect.value !== project) break;
+        if (sequence !== loadSequence || projectSelect.value !== project) break;
         assetBlobs.set(asset.path, blob);
         updateSelection();
         const url = URL.createObjectURL(blob);
@@ -137,6 +152,8 @@ async function initialize() {
     moveDestination.disabled = false;
 
     projectSelect.disabled = false;
+    categorySelect.disabled = false;
+    cleanupButton.disabled = false;
     const previous = localStorage.getItem("lasu-last-project");
     if (previous && Array.from(projectSelect.options).some(option => option.value === previous)) {
       projectSelect.value = previous;
@@ -150,6 +167,7 @@ projectSelect.addEventListener("change", () => {
   localStorage.setItem("lasu-last-project", projectSelect.value);
   loadAssets();
 });
+categorySelect.addEventListener("change", loadAssets);
 allButton.addEventListener("click", () => { selected = new Set(assets.map(a => a.path)); updateSelection(); });
 clearButton.addEventListener("click", () => { selected.clear(); updateSelection(); });
 moveDestination.addEventListener("change", updateSelection);
@@ -157,7 +175,7 @@ moveButton.addEventListener("click", async () => {
   const sourceProject = projectSelect.value;
   const destinationProject = moveDestination.value;
   const paths = assets.filter(asset => selected.has(asset.path)).map(asset => asset.path);
-  if (!paths.length || !destinationProject || destinationProject === sourceProject || moving) return;
+  if (!paths.length || !destinationProject || destinationProject === sourceProject || moving || cleaning) return;
   if (!window.confirm(`Move ${paths.length} selected file(s) from "${sourceProject}" to "${destinationProject}"?`)) return;
   moving = true;
   updateSelection();
@@ -213,4 +231,150 @@ saveButton.addEventListener("click", () => {
     error => message(error.name === "AbortError" ? "Sharing cancelled." : error.message)
   ).finally(updateSelection);
 });
+
+function setCleaning(value) {
+  cleaning = value;
+  cleanupButton.disabled = value;
+  cleanupConfirm.disabled = value;
+  cleanupCancel.disabled = value;
+  updateSelection();
+}
+
+async function cleanupRequest(payload) {
+  const options = {headers: headers()};
+  if (payload !== undefined) {
+    options.method = "POST";
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(payload);
+  }
+
+  const response = await fetch(`${API}/assets/cleanup`, options);
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      typeof result.detail === "string" ? result.detail : "Cleanup failed."
+    );
+  }
+  return result;
+}
+
+cleanupButton.addEventListener("click", async () => {
+  if (cleaning || moving) return;
+  setCleaning(true);
+  cleanupReview.hidden = true;
+  message("Checking inactive projects against the permanent archive…");
+
+  try {
+    const result = await cleanupRequest();
+    cleanupCandidates = result.projects;
+    cleanupProjects.replaceChildren();
+
+    if (!cleanupCandidates.length) {
+      message("No projects currently qualify for cleanup.");
+      return;
+    }
+
+    for (const project of cleanupCandidates) {
+      const row = document.createElement("label");
+      row.style.display = "block";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = project.project;
+
+      row.append(
+        checkbox,
+        document.createTextNode(
+          ` ${project.project} · ${project.files} files · ` +
+          `${(project.bytes / 1048576).toFixed(2)} MiB`
+        )
+      );
+      cleanupProjects.append(row);
+    }
+
+    cleanupReview.hidden = false;
+    message("Select the inactive projects to clean up.");
+  } catch (error) {
+    message(error.message);
+  } finally {
+    setCleaning(false);
+  }
+});
+
+cleanupCancel.addEventListener("click", () => {
+  cleanupReview.hidden = true;
+  cleanupCandidates = [];
+});
+
+cleanupConfirm.addEventListener("click", async () => {
+  if (cleaning || moving) return;
+
+  const names = new Set(
+    [...cleanupProjects.querySelectorAll("input:checked")].map(input => input.value)
+  );
+
+  const projects = cleanupCandidates
+    .filter(project => names.has(project.project))
+    .map(project => ({
+      project: project.project,
+      objects: project.objects
+    }));
+
+  if (!projects.length) {
+    message("Select at least one project.");
+    return;
+  }
+
+  if (!window.confirm(
+    `Remove selected inactive projects from Cloud Workspace?\n\n` +
+    `${projects.map(project => project.project).join("\n")}\n\n` +
+    `Permanent Gallery copies will be retained.`
+  )) return;
+
+  setCleaning(true);
+  message("Verifying original and archived files before cleanup…");
+
+  try {
+    const result = await cleanupRequest({confirm: true, projects});
+    cleanupReview.hidden = true;
+    cleanupCandidates = [];
+
+    const response = await fetch(`${API}/projects`, {headers: headers()});
+    if (response.ok) {
+      const data = await response.json();
+      const previous = projectSelect.value;
+
+      projectSelect.replaceChildren(new Option("Choose a project", ""));
+      moveDestination.replaceChildren(new Option("Choose destination project", ""));
+
+      for (const project of data.projects) {
+        projectSelect.add(new Option(project.name, project.name));
+        moveDestination.add(new Option(project.name, project.name));
+      }
+
+      if ([...projectSelect.options].some(option => option.value === previous)) {
+        projectSelect.value = previous;
+      }
+    }
+
+    await loadAssets();
+    message(
+      `Removed ${result.deleted.length} file(s), ` +
+      `${(result.bytes_deleted / 1048576).toFixed(2)} MiB. ` +
+      (result.remaining
+        ? `${result.remaining} file(s) remain. Review again before retrying.`
+        : "Permanent archive retained.")
+    );
+  } catch (error) {
+    cleanupReview.hidden = true;
+    cleanupCandidates = [];
+    await loadAssets();
+    message(`${error.message} Review workspace before retrying.`);
+  } finally {
+    setCleaning(false);
+  }
+});
+
 initialize();
+
+})();

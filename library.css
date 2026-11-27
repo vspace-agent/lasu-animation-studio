@@ -9,3 +9,21 @@
 .library-card .caption { display: block; padding: .45rem .2rem .15rem; overflow-wrap: anywhere; font-size: .75rem; }
 #library-status { min-height: 1.5rem; }
 @media (min-width: 700px) { .library-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+
+#workspace-view[hidden],
+#gallery-view[hidden],
+#cleanup-review[hidden] {
+  display: none !important;
+}
+
+#cleanup-review {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.75rem;
+}
+
+#cleanup-projects label {
+  margin: 0.5rem 0;
+}

@@ -4,9 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f2f0e9">
-  <title>Lasu 🦩 · Cloud Library</title>
+  <title>Lasu 🦩 · Visual Library</title>
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./library.css">
+<link rel="stylesheet" href="./gallery.css">
   <script src="./library.js" defer></script>
 </head>
 <body>
@@ -14,18 +15,28 @@
   <header class="site-header">
     <span class="studio-label">Mushroom House 🍄 Studio</span>
     <h1>Lasu <span aria-hidden="true">🦩</span></h1>
-    <p>☁️ Cloud Library</p>
+    <p>Visual Library</p>
   </header>
   <main class="workspace">
     <nav class="steps" aria-label="Studio navigation">
       <a href="./index.html#animate">← Animation Studio</a>
-      <a href="./library.html" aria-current="page">☁️ Cloud Library</a>
+      <a href="./library.html" aria-current="page">☁️ Library</a>
       <a href="./publish.html">🎬 Publish</a>
-      <a href="./gallery.html">🖼️ Gallery</a>
     </nav>
-    <section class="panel">
-      <h2>Your private animations</h2>
+    <nav class="steps library-tabs" aria-label="Library views">
+      <a id="workspace-tab" href="#workspace" aria-current="page">☁️ Cloud Workspace</a>
+      <a id="gallery-tab" href="#gallery">🖼️ Permanent Gallery</a>
+    </nav>
+    <section class="panel" id="workspace-view">
+      <h2>Cloud Workspace</h2>
       <p id="library-auth">Checking device pairing…</p>
+      <label for="library-category">Category</label>
+      <select id="library-category" disabled>
+        <option value="">All categories</option>
+        <option value="gif">GIF Animations</option>
+        <option value="mp4">MP4 Animations</option>
+        <option value="sprite">Sprite Sheets</option>
+      </select>
       <label for="library-project">Project</label>
       <select id="library-project" disabled><option value="">Choose a project</option></select>
       <div class="library-toolbar">
@@ -41,10 +52,53 @@
         <button id="move-selected" type="button" disabled>Move Selected (0)</button>
         <p>Moves the selected GIFs, MP4s, or sprite sheets between projects. Files are not copied.</p>
       </div>
+      <div class="library-toolbar">
+        <button id="cleanup-workspace" type="button" disabled>🧹 Clean Up Workspace</button>
+      </div>
+      <section id="cleanup-review" hidden>
+        <p>Inactive projects eligible for archive-verified cleanup:</p>
+        <div id="cleanup-projects"></div>
+        <button id="cleanup-confirm" type="button">Clean Up Selected Projects</button>
+        <button id="cleanup-cancel" type="button">Cancel</button>
+      </section>
       <p id="library-status" role="status" aria-live="polite"></p>
       <div id="library-grid" class="library-grid"></div>
     </section>
-  </main>
+  <section class="panel gallery-panel" id="gallery-view" hidden>
+      <h2>Mushroom House Visual Library</h2>
+      <p>Explore and download original visual assets from Lasu's public library.</p>
+      <div class="gallery-filters">
+        <label>Category
+          <select id="gallery-category"></select>
+        </label>
+        <label>Project
+          <select id="gallery-project"></select>
+        </label>
+      </div>
+      <p id="gallery-status" role="status" aria-live="polite">Loading gallery…</p>
+      <div id="gallery-grid" class="public-gallery-grid"></div>
+      <button id="gallery-more" type="button" hidden>Load more</button>
+    </section>
+</main>
   <footer>Made in Mushroom House 🍄 Studio</footer>
+<script src="./gallery.js"></script>
+<script>
+(() => {
+  function showLibraryView() {
+    const permanent = location.hash === "#gallery";
+    document.querySelector("#workspace-view").hidden = permanent;
+    document.querySelector("#gallery-view").hidden = !permanent;
+
+    const active = document.querySelector(permanent ? "#gallery-tab" : "#workspace-tab");
+    const inactive = document.querySelector(permanent ? "#workspace-tab" : "#gallery-tab");
+
+    active.setAttribute("aria-current", "page");
+    inactive.removeAttribute("aria-current");
+  }
+
+  window.addEventListener("hashchange", showLibraryView);
+  showLibraryView();
+})();
+</script>
 </body>
 </html>

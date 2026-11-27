@@ -1,3 +1,4 @@
+(() => {
 
 "use strict";
 
@@ -173,3 +174,5 @@ async function initialize() {
 }
 
 initialize();
+
+})();
