@@ -20,6 +20,7 @@ const cleanupConfirm = document.querySelector("#cleanup-confirm");
 const cleanupCancel = document.querySelector("#cleanup-cancel");
 
 let moving = false;
+let saving = false;
 let cleaning = false;
 let loadSequence = 0;
 let cleanupCandidates = [];
@@ -32,7 +33,7 @@ let assetBlobs = new Map();
 function message(value) { status.textContent = value; }
 function headers() { return { Authorization: `Bearer ${token}` }; }
 function updateSelection() {
-  saveButton.disabled = selected.size === 0 || [...selected].some(path => !assetBlobs.has(path));
+  saveButton.disabled = saving || selected.size === 0 || [...selected].some(path => !assetBlobs.has(path));
   moveButton.disabled = moving || cleaning || selected.size === 0 ||
     !moveDestination.value || moveDestination.value === projectSelect.value;
   moveButton.textContent = `Move Selected (${selected.size})`;
@@ -209,27 +210,133 @@ moveButton.addEventListener("click", async () => {
   }
 });
 
-saveButton.addEventListener("click", () => {
+
+// Store original media bytes in a standard, uncompressed ZIP archive.
+async function buildSelectedZip(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  let centralSize = 0;
+  const limit = 0xffffffff;
+
+  if (!files.length || files.length > 65535) {
+    throw new Error("Unsupported archive file count.");
+  }
+
+  const table = Uint32Array.from({length: 256}, (_, index) => {
+    let value = index;
+    for (let bit = 0; bit < 8; bit++) {
+      value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+    }
+    return value >>> 0;
+  });
+
+  for (const file of files) {
+    const name = encoder.encode(file.name);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const size = bytes.length;
+
+    if (name.length > 65535 ||
+        offset + 30 + name.length + size > limit) {
+      throw new Error("Selection exceeds ZIP size limits. Select fewer files.");
+    }
+
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc = (crc >>> 8) ^ table[(crc ^ byte) & 255];
+    }
+    crc = (crc ^ 0xffffffff) >>> 0;
+
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);
+    local.setUint16(6, 0x0800, true);
+    local.setUint16(12, 33, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, size, true);
+    local.setUint32(22, size, true);
+    local.setUint16(26, name.length, true);
+
+    const central = new DataView(new ArrayBuffer(46));
+    central.setUint32(0, 0x02014b50, true);
+    central.setUint16(4, 20, true);
+    central.setUint16(6, 20, true);
+    central.setUint16(8, 0x0800, true);
+    central.setUint16(14, 33, true);
+    central.setUint32(16, crc, true);
+    central.setUint32(20, size, true);
+    central.setUint32(24, size, true);
+    central.setUint16(28, name.length, true);
+    central.setUint32(42, offset, true);
+
+    localParts.push(local.buffer, name, file);
+    centralParts.push(central.buffer, name);
+
+    offset += 30 + name.length + size;
+    centralSize += 46 + name.length;
+  }
+
+  if (offset + centralSize + 22 > limit) {
+    throw new Error("Selection exceeds ZIP size limits. Select fewer files.");
+  }
+
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, files.length, true);
+  end.setUint16(10, files.length, true);
+  end.setUint32(12, centralSize, true);
+  end.setUint32(16, offset, true);
+
+  return new Blob(
+    [...localParts, ...centralParts, end.buffer],
+    {type: "application/zip"}
+  );
+}
+
+
+saveButton.addEventListener("click", async () => {
+  if (saving) return;
+
   const chosen = assets.filter(asset => selected.has(asset.path));
   if (!chosen.length) return;
+
   if (chosen.some(asset => !assetBlobs.has(asset.path))) {
     message("Selected files are still loading. Please wait.");
     return;
   }
+
+  const project = projectSelect.value;
   const files = chosen.map(asset => {
     const blob = assetBlobs.get(asset.path);
-    return new File([blob], asset.path.split("/").pop(), { type: blob.type });
+    return new File(
+      [blob],
+      `${asset.kind}/${asset.path.split("/").pop()}`,
+      {type: blob.type}
+    );
   });
-  if (!navigator.share || !navigator.canShare || !navigator.canShare({ files })) {
-    message("This browser cannot share this selection. Try fewer files or one media type.");
-    return;
+
+  saving = true;
+  updateSelection();
+  message(`Preparing ${files.length} selected file(s)…`);
+
+  try {
+    const archive = await buildSelectedZip(files);
+    const url = URL.createObjectURL(archive);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${project}-selected.zip`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    message(`Download started: ${files.length} file(s) in one ZIP.`);
+  } catch (error) {
+    message(`Download failed: ${error.message}`);
+  } finally {
+    saving = false;
+    updateSelection();
   }
-  saveButton.disabled = true;
-  message(`Opening device share sheet for ${files.length} file(s)…`);
-  navigator.share({ files }).then(
-    () => message(`${files.length} file(s) sent to the device share sheet.`),
-    error => message(error.name === "AbortError" ? "Sharing cancelled." : error.message)
-  ).finally(updateSelection);
 });
 
 function setCleaning(value) {
