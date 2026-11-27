@@ -39,3 +39,19 @@
 #gallery-view .gallery-filters select {
   min-width: 0;
 }
+
+
+/* Keep archive controls visually consistent with the private workspace. */
+#gallery-view .public-gallery-details {
+  padding: .65rem;
+}
+
+#gallery-view .public-gallery-details button {
+  width: auto;
+  margin-top: .55rem;
+}
+
+#gallery-view .public-gallery-details small {
+  font-size: .75rem;
+  font-weight: 400;
+}
