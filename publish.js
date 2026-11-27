@@ -375,6 +375,15 @@ function audioSelectionReady() {
     : trackCount(selectedModel()) >= 3;
 }
 
+function refinementTitle(base) {
+  const title = base.trim();
+  if (!title || !jazzPreset.value) return title;
+  const label = jazzPreset.selectedOptions[0]?.textContent.trim();
+  if (!label) throw new Error("Selected refinement name is unavailable.");
+  const suffix = ` · ${label}`;
+  return title.endsWith(suffix) ? title : title + suffix;
+}
+
 function batchThemeTitle() {
   const theme = batches.find(batch =>
     themeKey(batch) === batchSelect.value)?.theme || "";
@@ -400,7 +409,7 @@ function updateSequentialSummary() {
     summary.textContent =
       `1. Turbo → ${defaultPlaylist("turbo")?.title || "Default playlist unavailable"} · ` +
       `2. SFT+LM → ${defaultPlaylist("sft_lm")?.title || "Default playlist unavailable"} · ` +
-      `SFT+LM title: ${batchThemeTitle() || "Choose a batch theme"}`;
+      `SFT+LM title: ${refinementTitle(batchThemeTitle()) || "Choose a batch theme"}`;
   }
 }
 
@@ -775,10 +784,14 @@ function previewManifest(model = selectedModel()) {
   if (youtubeChannel.value !== DEFAULT_CHANNEL) {
     throw new Error("Asopo zala is verified, but cloud publishing authorization is not connected yet.");
   }
-  const title = bothMode() && model === "sft_lm"
-    ? batchThemeTitle()
-    : $("#video-title").value.trim();
-  if (!title || title.length > 100) throw new Error("Enter a YouTube title (up to 100 characters).");
+  const title = refinementTitle(
+    bothMode() && model === "sft_lm"
+      ? batchThemeTitle()
+      : $("#video-title").value.trim()
+  );
+  if (!title || [...title].length > 100) {
+    throw new Error("YouTube title including the refinement name must contain 1–100 characters.");
+  }
 
   return {
     schema_version: 3,
@@ -1021,7 +1034,10 @@ window.addEventListener("message", event => {
 
 // Apply one selected Mood Lab rule to the current composition.
 const jazzPreset = $("#jazz-refiner-preset");
-jazzPreset.addEventListener("change", invalidateReview);
+jazzPreset.addEventListener("change", () => {
+  invalidateReview();
+  updateSequentialSummary();
+});
 
 
 
