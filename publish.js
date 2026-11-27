@@ -156,20 +156,28 @@ let batches = [];
 let visualAssets = [];
 let selectedGifPaths = [];
 let visualCompositionDraft = null;
+const singleCyclePaths = new Set();
+let composerWindow = null;
+let composerSelection = null;
 const composerButton = $("#open-visual-composer");
 const composerStage = $("#visual-composer-stage");
-const composerFrame = $("#visual-composer-frame");
+
 const composerStatus = $("#visual-composer-status");
 
 function currentComposeSelection() {
   return { schema_version: 1, project: projectSelect.value,
-    assets: selectedGifPaths.map(path => ({ path, kind: "gif" })) };
+    assets: selectedGifPaths.map(path => ({
+      path, kind: "gif",
+      gif_mode: singleCyclePaths.has(path) ? "single" : "loop"
+    })) };
 }
 function invalidateVisualComposition() {
   visualCompositionDraft = null;
   invalidateReview();
   composerStage.hidden = true;
-  composerFrame.removeAttribute("src");
+  if (composerWindow && !composerWindow.closed) composerWindow.close();
+  composerWindow = null;
+  composerSelection = null;
   composerStatus.textContent = "Visual selection changed; reopen Compose to refine.";
 }
 
@@ -526,7 +534,20 @@ function renderGifOrder() {
       selectedGifPaths.splice(index, 1);
       updateGifSelection();
     });
-    item.append(number, name, up, down, remove);
+    const cycle = document.createElement("button");
+    cycle.type = "button";
+    cycle.className = "publish-cycle-toggle";
+    const single = singleCyclePaths.has(path);
+    cycle.textContent = single ? "↻ 1×" : "↻ Loop";
+    cycle.title = single ? "Play one complete GIF cycle" : "Repeat GIF";
+    cycle.setAttribute("aria-label", `Single-cycle playback for GIF ${index + 1}`);
+    cycle.setAttribute("aria-pressed", String(single));
+    cycle.addEventListener("click", () => {
+      if (singleCyclePaths.has(path)) singleCyclePaths.delete(path);
+      else singleCyclePaths.add(path);
+      updateGifSelection();
+    });
+    item.append(number, name, cycle, up, down, remove);
     list.append(item);
   }
 }
@@ -539,6 +560,9 @@ function moveGif(from, to) {
 }
 
 function updateGifSelection() {
+  for (const path of singleCyclePaths) {
+    if (!selectedGifPaths.includes(path)) singleCyclePaths.delete(path);
+  }
   invalidateReview();
   invalidateVisualComposition();
   for (const card of visualContainer.querySelectorAll(".publish-visual-card")) {
@@ -558,6 +582,7 @@ async function loadVisuals() {
   clearVisualPreviews();
   visualAssets = [];
   selectedGifPaths = [];
+  singleCyclePaths.clear();
   updateGifSelection();
   const project = projectSelect.value;
   if (!project) return;
@@ -1139,20 +1164,43 @@ initialize();
 // Compose shares the existing Publishing Studio asset selection and order.
 composerButton.addEventListener("click", () => {
   if (!selectedGifPaths.length || !projectSelect.value) return;
+
+  if (composerWindow && !composerWindow.closed) {
+    composerWindow.focus();
+    return;
+  }
+
+  composerSelection = currentComposeSelection();
+  composerWindow = window.open("./compose/", "_blank");
+
+  if (!composerWindow) {
+    composerSelection = null;
+    composerStatus.textContent = "Allow pop-ups to open Composer in a new tab.";
+    return;
+  }
+
   composerStage.hidden = false;
-  composerStatus.textContent = "Loading ordered GCP assets into Compose…";
-  composerFrame.src = "./compose/";
+  composerStatus.textContent = "Opening Composer in a full-width browser tab…";
 });
+
 $("#close-visual-composer").addEventListener("click", () => {
+  if (composerWindow && !composerWindow.closed) composerWindow.close();
+  composerWindow = null;
+  composerSelection = null;
   composerStage.hidden = true;
-  composerFrame.removeAttribute("src");
 });
+
 window.addEventListener("message", event => {
-  if (event.origin !== location.origin || event.source !== composerFrame.contentWindow) return;
+  if (!composerWindow || event.origin !== location.origin ||
+      event.source !== composerWindow) return;
+
   const message = event.data;
-  if (message?.type === "lasu:compose:ready" && !composerStage.hidden) {
-    composerFrame.contentWindow.postMessage(
-      { type: "lasu:compose:load", selection: currentComposeSelection() }, location.origin);
+
+  if (message?.type === "lasu:compose:ready" && composerSelection) {
+    composerWindow.postMessage(
+      { type: "lasu:compose:load", selection: composerSelection },
+      location.origin
+    );
   } else if (message?.type === "lasu:compose:loaded") {
     composerStatus.textContent =
       `Compose loaded ${message.count} GIFs in the selected publishing order.`;
@@ -1160,16 +1208,22 @@ window.addEventListener("message", event => {
     composerStatus.textContent = message.error || "Compose could not load these assets.";
   } else if (message?.type === "lasu:compose:draft") {
     const draft = message.draft;
-    if (draft?.project !== projectSelect.value ||
-        JSON.stringify(draft.source_paths) !== JSON.stringify(selectedGifPaths)) {
-      composerStatus.textContent = "Selection changed; draft rejected.";
+
+    if (!composerSelection ||
+        JSON.stringify(composerSelection) !== JSON.stringify(currentComposeSelection()) ||
+        draft?.project !== projectSelect.value ||
+        JSON.stringify(draft.source_paths) !== JSON.stringify(selectedGifPaths) ||
+        !Array.isArray(draft.clips) || !draft.clips.length ||
+        draft.clips.some(clip => !selectedGifPaths.includes(clip.asset_path) ||
+          !["single", "loop"].includes(clip.gif_mode))) {
+      composerStatus.textContent = "Selection changed or invalid; draft rejected.";
       return;
     }
+
     visualCompositionDraft = structuredClone(draft);
     invalidateReview();
     composerStatus.textContent =
-      `Draft received (${draft.clips.length} clips). This is a browser-side refinement; ` +
-      "The timeline will be applied during reviewed cloud rendering.";
+      `Draft received (${draft.clips.length} clips). Local timeline refinement saved in this page.`;
   }
 });
 

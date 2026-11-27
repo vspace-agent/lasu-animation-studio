@@ -121,3 +121,18 @@
 .sft-recording button { padding: .4rem .6rem; grid-column: 3; }
 @media (max-width: 650px) { .sft-recording { grid-template-columns: auto minmax(0, 1fr) auto; } }
 
+
+
+/* Per-asset playback mode in the ordered visual selection. */
+.publish-order-list .publish-cycle-toggle {
+  width: auto;
+  min-width: 62px;
+  padding-inline: 8px;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+.publish-cycle-toggle[aria-pressed="true"] {
+  background: #dce8df;
+  color: #214b3b;
+  border-color: #668977;
+}
