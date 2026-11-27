@@ -28,32 +28,37 @@
       <a id="gallery-tab" href="#gallery">🖼️ Permanent Gallery</a>
     </nav>
     <section class="panel" id="workspace-view">
-      <h2>Cloud Workspace</h2>
+      <div class="workspace-heading">
+        <h2>Cloud Workspace</h2>
+        <button id="cleanup-workspace" type="button" disabled>🧹 Clean Up GCS Bucket</button>
+      </div>
+      <p class="cleanup-rule">Removes projects inactive for at least 7 days, only when all files are safely archived and no active production needs them.</p>
       <p id="library-auth">Checking device pairing…</p>
-      <label for="library-category">Category</label>
-      <select id="library-category" disabled>
-        <option value="">All categories</option>
-        <option value="gif">GIF Animations</option>
-        <option value="mp4">MP4 Animations</option>
-        <option value="sprite">Sprite Sheets</option>
-      </select>
-      <label for="library-project">Project</label>
-      <select id="library-project" disabled><option value="">Choose a project</option></select>
+      <div class="workspace-filters">
+        <label for="library-category">Category
+          <select id="library-category" disabled>
+            <option value="">All categories</option>
+            <option value="gif" selected>GIF Animations</option>
+            <option value="mp4">MP4 Animations</option>
+            <option value="sprite">Sprite Sheets</option>
+          </select>
+        </label>
+        <label for="library-project">Project
+          <select id="library-project" disabled>
+            <option value="">Choose a project</option>
+          </select>
+        </label>
+      </div>
       <div class="library-toolbar">
         <button id="select-all" type="button" disabled>Select All</button>
         <button id="clear-selection" type="button" disabled>Clear</button>
-        <button id="save-selected" type="button" disabled>Save Selected (0)</button>
-      </div>
-      <div class="library-move">
-        <label for="move-destination">Move selected files to project</label>
-        <select id="move-destination" disabled>
-          <option value="">Choose destination project</option>
-        </select>
-        <button id="move-selected" type="button" disabled>Move Selected (0)</button>
-        <p>Moves the selected GIFs, MP4s, or sprite sheets between projects. Files are not copied.</p>
-      </div>
-      <div class="library-toolbar">
-        <button id="cleanup-workspace" type="button" disabled>🧹 Clean Up Workspace</button>
+        <button id="save-selected" type="button" disabled>Download Selected (0)</button>
+        <div class="move-controls">
+          <select id="move-destination" aria-label="Destination project" disabled>
+            <option value="">Move to project…</option>
+          </select>
+          <button id="move-selected" type="button" disabled>Move Selected (0)</button>
+        </div>
       </div>
       <section id="cleanup-review" hidden>
         <p>Inactive projects eligible for archive-verified cleanup:</p>

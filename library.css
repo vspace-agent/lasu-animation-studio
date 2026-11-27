@@ -1,6 +1,63 @@
 /* Present selectable private visual assets without changing the animation workspace. */
 .library-toolbar { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
-#library-project { display: block; width: 100%; margin: .5rem 0; padding: .65rem; }
+.workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+.workspace-heading h2 { margin: 0; }
+.workspace-heading button { margin: 0; width: auto; }
+.cleanup-rule {
+  font-size: .82rem;
+  opacity: .8;
+  margin: .45rem 0 .8rem;
+}
+.workspace-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: .75rem;
+  margin-block: .8rem;
+}
+.workspace-filters label { min-width: 0; }
+.workspace-filters select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: .35rem 0 0;
+  padding: .65rem;
+}
+#workspace-view .library-toolbar {
+  align-items: center;
+  gap: .4rem;
+  margin: .8rem 0;
+}
+#workspace-view .library-toolbar button {
+  width: auto;
+  margin: 0;
+}
+.move-controls {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+#move-destination {
+  flex: 1 1 100px;
+  width: 100%;
+  min-width: 0;
+  max-width: 240px;
+  margin: 0;
+}
+@media (max-width: 600px) {
+  #workspace-view .library-toolbar button {
+    font-size: .8rem;
+    padding: .65rem .7rem;
+  }
+  .workspace-heading button { font-size: .8rem; }
+}
 .library-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
 .library-card { position: relative; display: block; padding: .45rem; border: 2px solid #d8dfdb; border-radius: 1rem; background: #fff; cursor: pointer; overflow: hidden; }
 .library-card.selected { border-color: #397b6e; background: #e8f3ed; }

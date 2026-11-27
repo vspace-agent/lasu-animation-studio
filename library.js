@@ -40,7 +40,7 @@ function updateSelection() {
 
   clearButton.disabled = selected.size === 0;
   allButton.disabled = assets.length === 0 || selected.size === assets.length;
-  saveButton.textContent = `Save Selected (${selected.size})`;
+  saveButton.textContent = `Download Selected (${selected.size})`;
   for (const card of grid.querySelectorAll(".library-card")) {
     const checked = selected.has(card.dataset.path);
     card.classList.toggle("selected", checked);
@@ -321,6 +321,37 @@ saveButton.addEventListener("click", async () => {
   message(`Preparing ${files.length} selected file(s)…`);
 
   try {
+    const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+    if (isAppleMobile) {
+      const mediaFiles = chosen.map(asset => {
+        const blob = assetBlobs.get(asset.path);
+        const name = asset.path.split("/").pop();
+        const extension = name.split(".").pop().toLowerCase();
+        const types = {
+          gif: "image/gif",
+          png: "image/png",
+          jpg: "image/jpeg",
+          mp4: "video/mp4"
+        };
+        return new File([blob], name, {
+          type: types[extension] || blob.type
+        });
+      });
+
+      if (!navigator.share || !navigator.canShare ||
+          !navigator.canShare({files: mediaFiles})) {
+        message("Photos sharing is unavailable for this selection. Try Safari or fewer files of the same media type.");
+        return;
+      }
+
+      message("Choose Save Images or Save Video in the iPhone share sheet.");
+      await navigator.share({files: mediaFiles});
+      message("Share sheet completed.");
+      return;
+    }
+
     const archive = await buildSelectedZip(files);
     const url = URL.createObjectURL(archive);
     const link = document.createElement("a");
@@ -332,7 +363,9 @@ saveButton.addEventListener("click", async () => {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
     message(`Download started: ${files.length} file(s) in one ZIP.`);
   } catch (error) {
-    message(`Download failed: ${error.message}`);
+    message(error.name === "AbortError"
+      ? "Download cancelled."
+      : `Download failed: ${error.message}`);
   } finally {
     saving = false;
     updateSelection();
@@ -452,7 +485,7 @@ cleanupConfirm.addEventListener("click", async () => {
       const previous = projectSelect.value;
 
       projectSelect.replaceChildren(new Option("Choose a project", ""));
-      moveDestination.replaceChildren(new Option("Choose destination project", ""));
+      moveDestination.replaceChildren(new Option("Move to project…", ""));
 
       for (const project of data.projects) {
         projectSelect.add(new Option(project.name, project.name));

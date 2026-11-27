@@ -28,3 +28,14 @@
 .public-gallery-details button { width: 100%; margin-top: .7rem; }
 #gallery-more { display: block; margin: 1.25rem auto 0; }
 #gallery-more[hidden] { display: none; }
+
+
+#gallery-view .gallery-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: .75rem;
+}
+#gallery-view .gallery-filters label,
+#gallery-view .gallery-filters select {
+  min-width: 0;
+}

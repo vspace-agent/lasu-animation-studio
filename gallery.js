@@ -165,7 +165,15 @@ async function initialize() {
       ? new Date(catalog.published_at).toLocaleDateString() : "";
     options(categorySelect, assets.map(a => a.category), "All categories",
       c => LABELS[c] || readable(c));
-    options(projectSelect, assets.map(projectOf), "All projects", readable);
+    const gifCategory = [...categorySelect.options].find(option =>
+      /(?:^|\/)gif$/i.test(option.value) ||
+      /\bgif\b/i.test(option.textContent)
+    );
+    if (gifCategory) categorySelect.value = gifCategory.value;
+
+    options(projectSelect, assets.filter(asset =>
+      !categorySelect.value || asset.category === categorySelect.value
+    ).map(projectOf), "All projects", readable);
     filter();
   } catch (error) {
     status.textContent = "Gallery unavailable. Please reload to try again.";
