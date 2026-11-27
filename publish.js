@@ -661,6 +661,132 @@ const coverFileInput = $("#cover-image-file");
 const coverPreview = $("#cover-image-preview");
 const coverStatus = $("#cover-image-status");
 const removeCoverButton = $("#remove-cover-image");
+const savedThemeCover = $("#saved-theme-cover");
+const themeCoverLibraryStatus = $("#theme-cover-library-status");
+
+let themeCoverLibraryVersion = 0;
+let savedThemeCovers = [];
+
+function currentCoverTheme() {
+  const theme = batchSelect.value;
+  return /^[a-z0-9_]{1,200}$/.test(theme) ? theme : "";
+}
+
+function validThemeCoverPath(path, theme) {
+  if (!theme || typeof path !== "string") return false;
+  const prefix = `images/covers/by_theme/${theme}/${theme}_`;
+  return path.startsWith(prefix) &&
+    /^[0-9]{2,}\.(png|jpg|webp|heic|heif)$/.test(path.slice(prefix.length));
+}
+
+async function loadThemeCovers() {
+  const version = ++themeCoverLibraryVersion;
+  const theme = currentCoverTheme();
+
+  savedThemeCovers = [];
+  savedThemeCover.replaceChildren(new Option("Choose a saved cover…", ""));
+  savedThemeCover.disabled = true;
+  coverFileInput.disabled = !theme;
+
+  if (!theme) {
+    themeCoverLibraryStatus.textContent = "Choose an audio theme first.";
+    return;
+  }
+
+  themeCoverLibraryStatus.textContent = "Loading saved covers…";
+
+  try {
+    const result = await getJSON(
+      `/assets/covers?theme=${encodeURIComponent(theme)}`
+    );
+
+    if (version !== themeCoverLibraryVersion || theme !== currentCoverTheme()) return;
+
+    if (result.theme !== theme || !Array.isArray(result.covers)) {
+      throw new Error("Invalid cover collection.");
+    }
+
+    savedThemeCovers = result.covers.filter(
+      cover => validThemeCoverPath(cover.path, theme) &&
+        cover.name === cover.path.split("/").pop()
+    );
+
+    for (const cover of savedThemeCovers) {
+      savedThemeCover.add(new Option(
+        `Cover ${String(cover.number).padStart(2, "0")} · ${cover.name}`,
+        cover.path
+      ));
+    }
+
+    savedThemeCover.disabled = !savedThemeCovers.length;
+
+    if (coverAsset && savedThemeCovers.some(cover => cover.path === coverAsset.path)) {
+      savedThemeCover.value = coverAsset.path;
+    }
+
+    themeCoverLibraryStatus.textContent = savedThemeCovers.length
+      ? `${savedThemeCovers.length} saved cover(s) for this theme.`
+      : "No saved covers yet. Upload your first image.";
+  } catch (error) {
+    if (version !== themeCoverLibraryVersion || theme !== currentCoverTheme()) return;
+    themeCoverLibraryStatus.textContent = `Could not load saved covers: ${error.message}`;
+  }
+}
+
+savedThemeCover.addEventListener("change", async () => {
+  const path = savedThemeCover.value;
+  const theme = currentCoverTheme();
+  const cover = savedThemeCovers.find(item => item.path === path);
+
+  clearCoverImage();
+
+  if (!cover || !validThemeCoverPath(path, theme)) return;
+
+  savedThemeCover.value = path;
+  const version = coverSelectionVersion;
+  const controller = new AbortController();
+  coverUploadController = controller;
+  removeCoverButton.disabled = false;
+  coverStatus.textContent = "Loading saved cover…";
+
+  try {
+    const query = new URLSearchParams({theme, name: cover.name});
+    const response = await fetch(`${API}/assets/covers/file?${query}`, {
+      headers: {"Authorization": `Bearer ${token}`},
+      signal: controller.signal,
+    });
+
+    if (!response.ok) throw new Error(`Cover download failed (HTTP ${response.status}).`);
+
+    const image = await response.blob();
+
+    if (version !== coverSelectionVersion || theme !== currentCoverTheme()) return;
+
+    if (!image.size || image.size !== Number(cover.size_bytes)) {
+      throw new Error("Saved cover size does not match the stored asset.");
+    }
+
+    coverObjectURL = URL.createObjectURL(image);
+    coverPreview.onload = () => {
+      if (version === coverSelectionVersion) coverPreview.hidden = false;
+    };
+    coverPreview.onerror = () => {
+      if (version !== coverSelectionVersion) return;
+      coverPreview.hidden = true;
+      coverStatus.textContent = `${cover.name} · Selected (preview format unsupported by this browser)`;
+    };
+    coverPreview.src = coverObjectURL;
+    coverAsset = cover;
+    coverStatus.textContent = `${cover.name} · Saved cover selected`;
+    invalidateReview();
+  } catch (error) {
+    if (version !== coverSelectionVersion) return;
+    coverAsset = null;
+    coverStatus.textContent = error.message;
+  } finally {
+    if (version === coverSelectionVersion) coverUploadController = null;
+  }
+});
 
 let coverAsset = null;
 let coverObjectURL = null;
@@ -672,6 +798,7 @@ function clearCoverImage() {
   coverUploadController?.abort();
   coverUploadController = null;
   coverAsset = null;
+  savedThemeCover.value = "";
   coverFileInput.value = "";
   if (coverObjectURL) URL.revokeObjectURL(coverObjectURL);
   coverObjectURL = null;
@@ -686,6 +813,7 @@ visualSourceMode.addEventListener("change", () => {
   const coverMode = visualSourceMode.value === "cover";
   $("#cover-image-panel").hidden = !coverMode;
   $("#gif-visual-panel").hidden = coverMode;
+  if (coverMode) loadThemeCovers();
   invalidateReview();
 });
 
@@ -695,6 +823,12 @@ coverFileInput.addEventListener("change", async () => {
   const file = coverFileInput.files?.[0];
   clearCoverImage();
   if (!file) return;
+
+  const theme = currentCoverTheme();
+  if (!theme) {
+    coverStatus.textContent = "Choose an audio batch theme first.";
+    return;
+  }
 
   if (!file.size || file.size > 20 * 1024 * 1024) {
     coverStatus.textContent = "Choose a non-empty image no larger than 20 MiB.";
@@ -720,6 +854,7 @@ coverFileInput.addEventListener("change", async () => {
   try {
     const body = new FormData();
     body.append("image", file, file.name);
+    body.append("theme", theme);
 
     const response = await fetch(`${API}/assets/cover`, {
       method: "POST",
@@ -736,7 +871,7 @@ coverFileInput.addEventListener("change", async () => {
         ? result.detail : `Cover upload failed (HTTP ${response.status}).`);
     }
 
-    if (!/^images\/covers\/cover_uploads\/[0-9a-f]{64}\.(png|jpg|webp|heic|heif)$/.test(result.path)) {
+    if (theme !== currentCoverTheme() || !validThemeCoverPath(result.path, theme)) {
       throw new Error("Invalid cover upload receipt.");
     }
 
@@ -746,8 +881,9 @@ coverFileInput.addEventListener("change", async () => {
 
     coverAsset = result;
     coverStatus.textContent =
-      `${file.name} · ${result.width} × ${result.height} · Original uploaded`;
+      `${result.name} · ${result.width} × ${result.height} · Saved to theme library`;
     invalidateReview();
+    loadThemeCovers();
   } catch (error) {
     if (version !== coverSelectionVersion) return;
     coverAsset = null;
@@ -767,7 +903,9 @@ function previewManifest(model = selectedModel()) {
   const coverMode = visualSourceMode.value === "cover";
   if (coverMode) {
     if (coverUploadController) throw new Error("Cover upload is still in progress.");
-    if (!coverAsset) throw new Error("Upload one cover image first.");
+    if (!coverAsset || !validThemeCoverPath(coverAsset.path, currentCoverTheme())) {
+      throw new Error("Select or upload one cover image for the current audio theme.");
+    }
   } else {
     if (!selectedGifPaths.length) throw new Error("Select at least one GIF.");
     if (selectedGifPaths.some((path) =>
@@ -886,8 +1024,10 @@ $("#save-gif-selection").addEventListener("click", async () => {
 });
 
 batchSelect.addEventListener("change", () => {
+  clearCoverImage();
   descriptionEdited = false;
   renderAudio();
+  if (visualSourceMode.value === "cover") loadThemeCovers();
 });
 $("#publishing-preset").addEventListener("change", () => {
   descriptionEdited = false;
@@ -977,6 +1117,7 @@ async function initialize() {
   }
   try {
     await Promise.all([loadAudio(), loadProjects(), loadYoutubeDestinations()]);
+    if (visualSourceMode.value === "cover") await loadThemeCovers();
     refreshPublicationDescription();
     $("#publish-auth").textContent = "Private cloud access enabled.";
     if (activeProductionID) {
